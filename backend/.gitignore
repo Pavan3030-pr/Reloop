@@ -2,6 +2,11 @@ HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 
+### Local secrets — only the example file is tracked
+.env
+.env.local
+!.env.example
+
 ### Local runtime data (uploaded images)
 data/
 !**/src/main/**/target/

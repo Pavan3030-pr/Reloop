@@ -45,15 +45,25 @@ Prerequisites: **JDK 21+**, **Node 20+**, **PostgreSQL 14+**.
 # 1. Databases (creates reloop_dev and reloop_test)
 ./scripts/db-setup.sh
 
-# 2. Backend on :8080 — migrations run automatically on start
-./scripts/dev-backend.sh
+# 2. Local backend environment — creates backend/.env (git-ignored)
+cp backend/.env.example backend/.env
+printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 48)" >> backend/.env
 
-# 3. Frontend on :5173 (proxies /api and /uploads to :8080)
+# 3. Backend on :8080 — migrations run automatically on start
+cd backend && ./mvnw spring-boot:run
+
+# 4. Frontend on :5173 (proxies /api and /uploads to :8080)
 ./scripts/dev-frontend.sh
 ```
 
 Open <http://localhost:5173>. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` (see below) before the first
 backend start to bootstrap an administrator.
+
+### Health check
+
+```bash
+curl http://localhost:8080/actuator/health   # {"status":"UP"}
+```
 
 ### Configuration
 
@@ -63,13 +73,34 @@ The backend reads everything from the environment — no secrets are committed.
 | --- | --- | --- |
 | `DB_URL` | no | Defaults to `jdbc:postgresql://localhost:5432/reloop_dev` |
 | `DB_USERNAME` / `DB_PASSWORD` | no | Default to the OS user (works with trust/peer auth locally) |
-| `JWT_SECRET` | **yes** | ≥ 32 characters, HS256 signing key |
+| `JWT_SECRET` | **yes** | ≥ 32 characters, HS256 signing key. Locally supplied by `backend/.env` (see above); the app fails fast with instructions if it is missing |
 | `GEMINI_API_KEY` | for AI | Without it, `/api/waste/analyze` returns `503` and the UI falls back to manual classification |
 | `GEMINI_MODEL` | no | Defaults to `gemini-2.0-flash` |
 | `CORS_ALLOWED_ORIGINS` | prod | Comma-separated allow-list |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | first run | Bootstraps the first admin account |
 | `RELOOP_DEV_MODE` | no | `true` returns the password-reset token in the API response (there is no mail transport in this build) |
 | `STORAGE_LOCAL_DIR` / `STORAGE_PUBLIC_BASE_URL` | no | Local image storage location and public URL prefix |
+
+### Local development: `backend/.env`
+
+The one required value, `JWT_SECRET`, is supplied by a local `backend/.env` file that Spring Boot
+imports automatically (`spring.config.import: optional:file:.env`). That means plain
+`./mvnw spring-boot:run` works from the backend directory with nothing exported in your shell:
+
+```bash
+cd backend
+cp .env.example .env                                  # one-time
+printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 48)" >> .env   # one-time
+./mvnw spring-boot:run                                # http://localhost:8080
+```
+
+- `backend/.env.example` is committed and contains placeholders only; `backend/.env` is ignored by
+  `.gitignore` and must never be committed.
+- Real environment variables still win over `.env`, which is how deployments are configured — see
+  `application-prod.yml`. `./scripts/dev-backend.sh` loads `backend/.env` first and only fills in
+  what is missing, so it never shadows a value you set yourself.
+- `JWT_SECRET` has **no default**. If it is missing or shorter than 32 bytes the application fails
+  at startup with instructions, rather than signing tokens with a shared fallback secret.
 
 ## Testing
 

@@ -7,8 +7,25 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# A JWT secret is mandatory; generate a throwaway one for local development only.
-export JWT_SECRET="${JWT_SECRET:-$(head -c 48 /dev/urandom | base64 | tr -d '\n')}"
+# Spring Boot imports backend/.env on its own, but loading it here as well keeps what this
+# script prints in step with what the application actually uses.
+ENV_FILE="$ROOT_DIR/backend/.env"
+if [ -f "$ENV_FILE" ]; then
+  echo "loading $ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
+# A JWT secret is mandatory and JwtService fails fast without it (there is no fallback
+# secret in the code). The value in backend/.env is preferred so issued tokens survive a
+# restart; otherwise generate a throwaway one for this run only.
+if [ -z "${JWT_SECRET:-}" ]; then
+  export JWT_SECRET="$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
+  echo "note: no JWT_SECRET in $ENV_FILE — using a throwaway secret for this run only."
+  echo "      Persist one instead:  echo \"JWT_SECRET=\$(openssl rand -base64 48)\" >> backend/.env"
+fi
 
 # Dev mode returns the password-reset token in the API response, because this build
 # has no mail transport configured.

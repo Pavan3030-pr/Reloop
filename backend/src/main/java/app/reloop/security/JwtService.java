@@ -36,11 +36,19 @@ public class JwtService {
     void init() {
         String secret = properties.jwt() != null ? properties.jwt().secret() : null;
         if (secret == null || secret.isBlank()) {
-            throw new IllegalStateException(
-                    "JWT_SECRET is not configured. Set the JWT_SECRET environment variable (min 32 chars).");
+            throw new IllegalStateException("""
+                    JWT_SECRET is not configured, so access tokens cannot be signed.
+                    Local development: copy backend/.env.example to backend/.env and set
+                        JWT_SECRET=<openssl rand -base64 48>
+                    Spring Boot loads backend/.env automatically, so `./mvnw spring-boot:run`
+                    from the backend directory then works without shell exports. You can also
+                    export JWT_SECRET directly in your environment.
+                    There is deliberately no built-in default: tokens signed with a shared
+                    fallback secret would be forgeable by anyone running this code.""");
         }
         if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
-            throw new IllegalStateException("JWT_SECRET must be at least 32 characters long.");
+            throw new IllegalStateException(
+                    "JWT_SECRET must be at least 32 bytes for HS256. Generate one with: openssl rand -base64 48");
         }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
