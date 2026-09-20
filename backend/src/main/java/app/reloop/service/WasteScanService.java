@@ -41,7 +41,10 @@ public class WasteScanService {
         if (image == null || image.isEmpty()) {
             throw new app.reloop.exception.BadRequestException("Upload an image of the waste item first");
         }
-        GeminiService.GeminiAnalysis analysis = geminiService.analyze(safeBytes(image), safeMime(image));
+        // Reject non-images before spending a provider call, and trust the type detected from the
+        // file's content rather than the one the client declared.
+        String detectedMime = imageStorageService.detectImageType(image);
+        GeminiService.GeminiAnalysis analysis = geminiService.analyze(safeBytes(image), detectedMime);
         WasteCategory category = resolveCategory(analysis.category());
         BigDecimal confidence = BigDecimal.valueOf(analysis.confidence()).setScale(3, RoundingMode.HALF_UP);
         return new WasteAnalysisResponse(
@@ -133,10 +136,6 @@ public class WasteScanService {
         } catch (Exception e) {
             throw new app.reloop.exception.BadRequestException("Could not read the uploaded image");
         }
-    }
-
-    private String safeMime(MultipartFile file) {
-        return file.getContentType() == null ? "image/jpeg" : file.getContentType();
     }
 
     private ScanDto toDto(WasteScan scan) {

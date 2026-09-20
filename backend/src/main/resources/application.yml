@@ -39,7 +39,11 @@ reloop:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   gemini:
     api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.0-flash}
+    # Must be a model that is currently served by the Gemini API. Google shut down
+    # gemini-2.0-flash on 2026-06-01, so the default is a current GA Flash model;
+    # override with GEMINI_MODEL if you need a different one.
+    # See https://ai.google.dev/gemini-api/docs/deprecations
+    model: ${GEMINI_MODEL:gemini-3.6-flash}
     base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
     timeout-seconds: 30
   storage:

@@ -56,6 +56,7 @@ class AiAnalysisWithStubProviderTest {
     private static final AtomicReference<String> LAST_PATH = new AtomicReference<>("");
     private static final AtomicReference<String> LAST_API_KEY = new AtomicReference<>("");
     private static final AtomicReference<String> LAST_REQUEST_BODY = new AtomicReference<>("");
+    private static final AtomicInteger PROVIDER_CALLS = new AtomicInteger();
 
     private static final HttpServer PROVIDER;
     private static final int PORT;
@@ -65,6 +66,7 @@ class AiAnalysisWithStubProviderTest {
             PROVIDER = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             PORT = PROVIDER.getAddress().getPort();
             PROVIDER.createContext("/v1beta/models", exchange -> {
+                PROVIDER_CALLS.incrementAndGet();
                 LAST_PATH.set(exchange.getRequestURI().getPath());
                 LAST_API_KEY.set(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
                 LAST_REQUEST_BODY.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -87,7 +89,7 @@ class AiAnalysisWithStubProviderTest {
     static void geminiProperties(DynamicPropertyRegistry registry) {
         registry.add("reloop.gemini.api-key", () -> "stub-test-key");
         registry.add("reloop.gemini.base-url", () -> "http://127.0.0.1:" + PORT);
-        registry.add("reloop.gemini.model", () -> "gemini-2.0-flash");
+        registry.add("reloop.gemini.model", () -> "gemini-3.6-flash");
     }
 
     @AfterAll
@@ -216,12 +218,20 @@ class AiAnalysisWithStubProviderTest {
         assertThat(analysis.path("recyclable").asBoolean()).isTrue();
         assertThat(analysis.path("hazardous").asBoolean()).isFalse();
         assertThat(analysis.path("lowConfidence").asBoolean()).isFalse();
-        assertThat(analysis.path("aiModel").asText()).isEqualTo("gemini-2.0-flash");
+        assertThat(analysis.path("aiModel").asText()).isEqualTo("gemini-3.6-flash");
 
         // The real service built a real Gemini-shaped request: model in path, key header, inline image data.
-        assertThat(LAST_PATH.get()).contains("gemini-2.0-flash").contains(":generateContent");
+        assertThat(LAST_PATH.get()).contains("gemini-3.6-flash").contains(":generateContent");
         assertThat(LAST_API_KEY.get()).isEqualTo("stub-test-key");
-        assertThat(LAST_REQUEST_BODY.get()).contains("inline_data").contains("image/png");
+        assertThat(LAST_REQUEST_BODY.get())
+                .contains("inline_data")
+                .contains("image/png")
+                // JSON mode is requested so the reply can be parsed deterministically ...
+                .contains("\"response_mime_type\":\"application/json\"")
+                // ... and the deprecated sampling parameters are never sent.
+                .doesNotContain("temperature")
+                .doesNotContain("top_p")
+                .doesNotContain("top_k");
 
         // The user confirms the AI result; it is persisted as an AI-assisted scan.
         JsonNode saved = saveScan(token, categoryId(token, "PLASTIC"), analysis.path("item").asText(),
@@ -271,6 +281,39 @@ class AiAnalysisWithStubProviderTest {
         assertThat(analysis.path("message").asText()).containsIgnoringCase("temporarily unavailable");
 
         providerResponds(200, ""); // restore for other tests
+    }
+
+    @Test
+    void nonImageUploadIsRejectedWithoutCallingTheProvider() {
+        String token = registerUser();
+        int callsBefore = PROVIDER_CALLS.get();
+        byte[] notAnImage = "this is plainly not an image".getBytes(StandardCharsets.UTF_8);
+
+        JsonNode analysis = analyze(token, notAnImage, "payload.png", "image/png");
+
+        assertThat(analysis.path("__status").asInt()).isEqualTo(400);
+        assertThat(analysis.path("message").asText()).containsIgnoringCase("JPG, PNG, or WEBP");
+        assertThat(analysis.has("item")).isFalse();
+        // Validation happens before the provider is contacted, so no quota is spent.
+        assertThat(PROVIDER_CALLS.get()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void missingImagePartIsRejectedWith400NotServerError() {
+        String token = registerUser();
+        int callsBefore = PROVIDER_CALLS.get();
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("notTheImage", "oops");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setBearerAuth(token);
+
+        JsonNode response = toNode(http.exchange("/api/waste/analyze", HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class));
+
+        assertThat(response.path("__status").asInt()).isEqualTo(400);
+        assertThat(response.path("message").asText()).containsIgnoringCase("image");
+        assertThat(PROVIDER_CALLS.get()).isEqualTo(callsBefore);
     }
 
     @Test

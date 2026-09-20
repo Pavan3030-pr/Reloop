@@ -74,8 +74,8 @@ The backend reads everything from the environment — no secrets are committed.
 | `DB_URL` | no | Defaults to `jdbc:postgresql://localhost:5432/reloop_dev` |
 | `DB_USERNAME` / `DB_PASSWORD` | no | Default to the OS user (works with trust/peer auth locally) |
 | `JWT_SECRET` | **yes** | ≥ 32 characters, HS256 signing key. Locally supplied by `backend/.env` (see above); the app fails fast with instructions if it is missing |
-| `GEMINI_API_KEY` | for AI | Without it, `/api/waste/analyze` returns `503` and the UI falls back to manual classification |
-| `GEMINI_MODEL` | no | Defaults to `gemini-2.0-flash` |
+| `GEMINI_API_KEY` | for AI | The only value needed to switch the AI scanner on. Without it, `/api/waste/analyze` returns `503` and the UI falls back to manual classification |
+| `GEMINI_MODEL` | no | Defaults to `gemini-3.6-flash`. Must be a model the Gemini API still serves — `gemini-2.0-flash` was shut down on 2026-06-01 |
 | `CORS_ALLOWED_ORIGINS` | prod | Comma-separated allow-list |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | first run | Bootstraps the first admin account |
 | `RELOOP_DEV_MODE` | no | `true` returns the password-reset token in the API response (there is no mail transport in this build) |
@@ -102,6 +102,42 @@ printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 48)" >> .env   # one-time
 - `JWT_SECRET` has **no default**. If it is missing or shorter than 32 bytes the application fails
   at startup with instructions, rather than signing tokens with a shared fallback secret.
 
+### Enabling the AI waste scanner (Gemini)
+
+The scanner calls Google Gemini from the backend only; the key is never sent to the browser. To turn
+it on:
+
+```bash
+# 1. Create a key at https://aistudio.google.com/apikey, then add it locally:
+cd backend
+printf 'GEMINI_API_KEY=%s\n' 'YOUR_KEY_HERE' >> .env    # backend/.env is git-ignored
+
+# 2. Restart and confirm the startup log line:
+./mvnw spring-boot:run
+#   "Gemini waste analysis enabled with model gemini-3.6-flash"
+```
+
+If the key is absent the log instead reads `Gemini waste analysis is DISABLED`, and `POST
+/api/waste/analyze` answers `503` with a clear message — the app never fabricates a classification.
+
+Verify the endpoint directly (any registered user token works):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}' | jq -r .accessToken)
+
+curl -s -X POST http://localhost:8080/api/waste/analyze \
+  -H "Authorization: Bearer $TOKEN" \
+  -F image=@/path/to/waste-photo.jpg | jq
+```
+
+A configured, working key returns `item`, `categoryCode`, `confidence`, `recyclable`, `hazardous`,
+`disposalInstruction` and `aiModel`. Override the model only with an ID the API currently serves:
+`GEMINI_MODEL=gemini-3.8-flash` — see
+[docs/API.md](./docs/API.md#post-apiwasteanalyze) for the response contract and
+[the deprecation schedule](https://ai.google.dev/gemini-api/docs/deprecations) before pinning one.
+
 ## Testing
 
 The backend suite runs against a real PostgreSQL database (`reloop_test`) and the real HTTP stack —
@@ -121,8 +157,11 @@ What the suite covers:
   role authorization and rejection of invalid state transitions.
 - **`AiAnalysisWithStubProviderTest`** — the real analysis path (controller → service → Gemini
   client → response parsing) against a deterministic local stub at the network boundary, covering a
-  valid structured response, a low-confidence response, a malformed provider payload and a provider
-  failure (`503`).
+  valid structured response, a low-confidence response, a malformed provider payload, a provider
+  failure (`503`), the outbound request itself (model in the path, key in a header, inline image
+  data, JSON output requested, no deprecated sampling parameters) and image validation.
+- **`FullFlowIntegrationTest`** also covers the unconfigured case: with no key, `/api/waste/analyze`
+  returns `503` and no fabricated result.
 - **`GeminiServiceTest`**, **`JwtServiceTest`**, **`GeoUtilsTest`** — unit coverage of response
   parsing, token issue/parse/expiry and distance maths.
 

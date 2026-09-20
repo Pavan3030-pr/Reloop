@@ -40,6 +40,29 @@ public class ImageStorageService {
     public record StoredImage(String key, String publicUrl) {}
 
     /**
+     * Checks that an upload really is a supported image by inspecting its content, and returns the
+     * detected MIME type. Used before expensive work (such as calling Gemini) where the
+     * client-declared filename and content type are only advisory.
+     */
+    public String detectImageType(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("No image file was provided");
+        }
+        if (file.getSize() > MAX_BYTES) {
+            throw new BadRequestException("Image exceeds the maximum size of 8MB");
+        }
+        try (InputStream in = file.getInputStream()) {
+            String sniffed = sniffMimeType(in);
+            if (sniffed == null || !ALLOWED_CONTENT_TYPES.contains(sniffed)) {
+                throw new BadRequestException("Only JPG, PNG, or WEBP images are supported");
+            }
+            return sniffed;
+        } catch (IOException e) {
+            throw new BadRequestException("Could not read the uploaded file");
+        }
+    }
+
+    /**
      * Validates and stores an uploaded image, returning its storage key and public URL.
      * Validation covers extension, declared MIME type, size, and magic bytes.
      */
