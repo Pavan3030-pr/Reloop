@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------- build output
+backend/target/
+frontend/dist/
+frontend/dist-ssr/
+
+# ---------------------------------------------------------------- dependencies
+node_modules/
+frontend/node_modules/
+
+# ---------------------------------------------------------------- local runtime data
+# Uploaded scan/pickup images are written here by the local storage provider.
+backend/data/
+backend/target/test-uploads/
+*.log
+
+# ---------------------------------------------------------------- editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------- secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---------------------------------------------------------------- tooling metadata
+.freebuff/

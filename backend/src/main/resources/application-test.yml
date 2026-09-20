@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/reloop_test
+    username: ${DB_USERNAME:${user.name}}
+    password: ${DB_PASSWORD:}
+
+reloop:
+  jwt:
+    secret: test-only-secret-key-for-reloop-integration-tests-0123456789abcdef
+  dev-mode: true
+  storage:
+    local-dir: ./target/test-uploads
+    public-base-url: http://localhost:8080/uploads
+
+logging:
+  level:
+    app.reloop: INFO
