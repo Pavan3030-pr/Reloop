@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Field, Note, Spinner } from '../components/ui';
+import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { AuthAside } from './AuthAside';
@@ -27,7 +28,7 @@ export function Login() {
     setError(null);
     try {
       await login(email, password);
-      navigate(location.state?.from ?? '/', { replace: true });
+      navigate(location.state?.from ?? '/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign you in. Please try again.');
     } finally {
@@ -73,12 +74,13 @@ export function Login() {
       <AuthAside />
       <div className="auth-form-side">
         <div className="auth-card">
+          <span className="eyebrow">Sign in</span>
           <h2>Welcome back</h2>
           <p className="muted small">Sign in to keep tracking your recycling.</p>
 
           {error ? <Note tone="error">{error}</Note> : null}
 
-          <form onSubmit={submit} style={{ marginTop: 16 }}>
+          <form onSubmit={submit} style={{ marginTop: 18 }}>
             <Field label="Email" htmlFor="email">
               <input
                 id="email"
@@ -101,7 +103,7 @@ export function Login() {
                 placeholder="••••••••"
               />
             </Field>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" className="block lg" disabled={busy}>
               {busy ? <Spinner onPrimary /> : null}
               {busy ? 'Signing in…' : 'Sign in'}
             </Button>
@@ -110,13 +112,25 @@ export function Login() {
           <div className="switch">
             New to ReLoop? <Link to="/register">Create an account</Link>
           </div>
-          <button type="button" className="btn ghost small" style={{ marginTop: 8 }} onClick={() => setResetOpen((v) => !v)}>
+
+          <button
+            type="button"
+            className="btn ghost small"
+            style={{ marginTop: 10, paddingInline: 0 }}
+            onClick={() => setResetOpen((v) => !v)}
+          >
+            <Icon name={resetOpen ? 'chevronDown' : 'chevronRight'} size={15} />
             {resetOpen ? 'Hide password reset' : 'Forgot your password?'}
           </button>
 
           {resetOpen ? (
-            <div className="card tight" style={{ marginTop: 12 }}>
-              <h3>Reset your password</h3>
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="card-head">
+                <span className="icon-tile" aria-hidden="true">
+                  <Icon name="lock" size={17} />
+                </span>
+                <h3>Reset your password</h3>
+              </div>
               <form onSubmit={requestReset}>
                 <Field label="Account email" htmlFor="reset-email">
                   <input
@@ -133,16 +147,16 @@ export function Login() {
               </form>
 
               {resetMessage ? (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 14 }}>
                   <Note tone={resetDone ? 'success' : 'info'}>{resetMessage}</Note>
                 </div>
               ) : null}
 
               {devToken ? (
-                <form onSubmit={completeReset} style={{ marginTop: 12 }}>
+                <form onSubmit={completeReset} style={{ marginTop: 14 }}>
                   <Note tone="warning">
-                    Email delivery is not configured on this server, so the reset token is shown here for development. In
-                    production this token would arrive by email.
+                    Email delivery is not configured on this server, so the reset token is shown here for development.
+                    In production this token would arrive by email.
                   </Note>
                   <div className="divider" />
                   <Field label="Reset token" htmlFor="reset-token">
@@ -165,6 +179,11 @@ export function Login() {
               ) : null}
             </div>
           ) : null}
+
+          <div className="divider" />
+          <Link className="small muted" to="/">
+            ← Back to the ReLoop overview
+          </Link>
         </div>
       </div>
     </div>

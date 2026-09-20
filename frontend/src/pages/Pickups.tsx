@@ -1,13 +1,32 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, EmptyState, Field, Loading, Note, Spinner, StatusPill, useAsync } from '../components/ui';
+import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, StatusPill, useAsync } from '../components/ui';
+import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
 import { dateOnly, kg, relativeTime, todayISO } from '../lib/format';
 import { getBrowserLocation } from '../lib/geo';
-import type { PickupStatus, TimeSlot } from '../lib/types';
+import type { Pickup, PickupStatus, TimeSlot } from '../lib/types';
 import { useAuth } from '../context/AuthContext';
 
-const FILTERS: (PickupStatus | 'ALL')[] = ['ALL', 'REQUESTED', 'ACCEPTED', 'SCHEDULED', 'PICKED_UP', 'PROCESSING', 'RECOVERED', 'CANCELLED'];
+const FILTERS: (PickupStatus | 'ALL')[] = [
+  'ALL',
+  'REQUESTED',
+  'ACCEPTED',
+  'SCHEDULED',
+  'PICKED_UP',
+  'PROCESSING',
+  'RECOVERED',
+  'CANCELLED',
+];
+
+function StepLabel({ no, children }: { no: string; children: string }) {
+  return (
+    <div className="step-label">
+      <span className="step-no">{no}</span>
+      <span>{children}</span>
+    </div>
+  );
+}
 
 export function Pickups() {
   const { user } = useAuth();
@@ -31,13 +50,14 @@ export function Pickups() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [success, setSuccess] = useState<string | null>(null);
+  const [created, setCreated] = useState<Pickup | null>(null);
 
   const activeCategories = useMemo(() => categories.data?.filter((c) => c.active) ?? [], [categories.data]);
 
   // Prefill address fields from the saved profile the first time the form opens.
   const openForm = () => {
     setFormOpen(true);
+    setCreated(null);
     if (!address && profile.data?.addressLine) setAddress(profile.data.addressLine);
     if (!city && profile.data?.city) setCity(profile.data.city);
   };
@@ -53,7 +73,7 @@ export function Pickups() {
     setBusy(true);
     setError(null);
     setFieldErrors({});
-    setSuccess(null);
+    setCreated(null);
     try {
       const pickup = await api.createPickup({
         categoryId,
@@ -68,9 +88,10 @@ export function Pickups() {
         notes: notes || undefined,
         photo,
       });
-      setSuccess(`Pickup ${pickup.code} requested. A verified collector in your city can accept it now.`);
+      setCreated(pickup);
       setNotes('');
       setPhoto(null);
+      setFormOpen(false);
       list.reload();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -96,26 +117,50 @@ export function Pickups() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>My pickups</h1>
-          <p className="lede">
-            Request a pickup and a verified collector will accept it, schedule a visit and record the actual weight
-            collected.
-          </p>
-        </div>
-        <div className="spacer" />
-        <Button type="button" onClick={formOpen ? () => setFormOpen(false) : openForm}>
-          {formOpen ? 'Close form' : '＋ New pickup'}
-        </Button>
-      </div>
+      <PageHead
+        eyebrow="Collection"
+        title="Pickups"
+        lede="Request a pickup and a verified collector accepts it, schedules a visit and records the weight collected on site. Every stage below is enforced by the platform."
+        actions={
+          <Button type="button" onClick={formOpen ? () => setFormOpen(false) : openForm}>
+            <Icon name={formOpen ? 'close' : 'plus'} size={17} />
+            {formOpen ? 'Close form' : 'New pickup'}
+          </Button>
+        }
+      />
 
-      {success ? <Note tone="success">{success}</Note> : null}
+      {created ? (
+        <div className="panel" style={{ marginBottom: 18 }}>
+          <div className="card-head">
+            <span className="icon-tile" aria-hidden="true">
+              <Icon name="checkCircle" size={18} />
+            </span>
+            <h3 style={{ margin: 0 }}>Request received</h3>
+            <span className="spacer" />
+            <StatusPill status={created.status} />
+          </div>
+          <p className="muted small" style={{ marginBottom: 14 }}>
+            Your reference is <strong className="mono">{created.code}</strong> — a verified collector in your city can
+            accept it now. You can cancel while it is still requested.
+          </p>
+          <div className="btn-row">
+            <Link className="btn small" to={`/pickups/${created.code}`}>
+              Track {created.code}
+              <Icon name="arrowRight" size={15} />
+            </Link>
+            <Button type="button" className="ghost small" onClick={openForm}>
+              Book another
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {error ? <Note tone="error">{error}</Note> : null}
 
       {formOpen ? (
         <Card title="Book a pickup">
           <form onSubmit={submit}>
+            <StepLabel no="01">What are we collecting?</StepLabel>
             <div className="inline-fields">
               <Field label="Material" htmlFor="p-category" error={fieldErrors.categoryId}>
                 <select id="p-category" required value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
@@ -127,7 +172,12 @@ export function Pickups() {
                   ))}
                 </select>
               </Field>
-              <Field label="Estimated weight (kg)" htmlFor="p-qty" hint="At least 0.1 kg" error={fieldErrors.estimatedQuantityKg}>
+              <Field
+                label="Estimated weight (kg)"
+                htmlFor="p-qty"
+                hint="At least 0.1 kg — the collector records the real weight"
+                error={fieldErrors.estimatedQuantityKg}
+              >
                 <input
                   id="p-qty"
                   type="number"
@@ -138,6 +188,36 @@ export function Pickups() {
                   onChange={(e) => setEstimatedQuantityKg(e.target.value)}
                 />
               </Field>
+            </div>
+
+            <StepLabel no="02">Where should we collect it?</StepLabel>
+            <Field label="Address" htmlFor="p-address" error={fieldErrors.address}>
+              <input
+                id="p-address"
+                required
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Flat / house, street, landmark"
+              />
+            </Field>
+            <div className="inline-fields">
+              <Field label="City" htmlFor="p-city" error={fieldErrors.city}>
+                <input id="p-city" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Hyderabad" />
+              </Field>
+              <Field label="Pincode" htmlFor="p-pin" error={fieldErrors.pincode}>
+                <input id="p-pin" value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="500081" />
+              </Field>
+            </div>
+            <div className="btn-row" style={{ marginBottom: 20 }}>
+              <Button type="button" className="secondary small" onClick={useMyLocation}>
+                <Icon name="pin" size={15} />
+                {coords ? 'Coordinates attached' : 'Attach my location'}
+              </Button>
+              <span className="small muted">Optional — it helps collectors find you and shows distance.</span>
+            </div>
+
+            <StepLabel no="03">When suits you?</StepLabel>
+            <div className="inline-fields">
               <Field label="Pickup date" htmlFor="p-date" hint="Today or later" error={fieldErrors.pickupDate}>
                 <input
                   id="p-date"
@@ -157,29 +237,10 @@ export function Pickups() {
               </Field>
             </div>
 
-            <Field label="Address" htmlFor="p-address" error={fieldErrors.address}>
-              <input
-                id="p-address"
-                required
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Flat / house, street, landmark"
-              />
-            </Field>
-
-            <div className="inline-fields">
-              <Field label="City" htmlFor="p-city" error={fieldErrors.city}>
-                <input id="p-city" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Hyderabad" />
-              </Field>
-              <Field label="Pincode" htmlFor="p-pin" error={fieldErrors.pincode}>
-                <input id="p-pin" value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="500081" />
-              </Field>
-            </div>
-
-            <Field label="Notes for the collector" htmlFor="p-notes" hint="Gate code, bag count, access instructions…">
+            <StepLabel no="04">Anything the collector should know?</StepLabel>
+            <Field label="Notes" htmlFor="p-notes" hint="Gate code, bag count, access instructions…">
               <textarea id="p-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </Field>
-
             <Field label="Photo of the waste (optional)" htmlFor="p-photo" hint="JPG, PNG or WEBP up to 8 MB">
               <input
                 id="p-photo"
@@ -189,17 +250,14 @@ export function Pickups() {
               />
             </Field>
 
-            <div className="btn-row">
+            <div className="btn-row" style={{ marginTop: 6 }}>
               <Button type="submit" disabled={busy || activeCategories.length === 0}>
-                {busy ? <Spinner onPrimary /> : null}
+                {busy ? <Spinner onPrimary /> : <Icon name="truck" size={17} />}
                 {busy ? 'Requesting…' : 'Request pickup'}
-              </Button>
-              <Button type="button" className="secondary" onClick={useMyLocation}>
-                {coords ? '📍 Coordinates attached' : '📍 Attach my location'}
               </Button>
               {scans.data && scans.data.content.length > 0 ? (
                 <span className="small muted">
-                  Tip: your latest scan was “{scans.data.content[0].detectedItem ?? scans.data.content[0].category?.name}”.
+                  Latest scan: “{scans.data.content[0].detectedItem ?? scans.data.content[0].category?.name}”
                 </span>
               ) : null}
             </div>
@@ -207,9 +265,16 @@ export function Pickups() {
         </Card>
       ) : null}
 
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Filter pickups by status">
         {FILTERS.map((status) => (
-          <button key={status} type="button" className={`tab${filter === status ? ' active' : ''}`} onClick={() => setFilter(status)}>
+          <button
+            key={status}
+            type="button"
+            role="tab"
+            aria-selected={filter === status}
+            className={`tab${filter === status ? ' active' : ''}`}
+            onClick={() => setFilter(status)}
+          >
             {status === 'ALL' ? 'All' : status.replace('_', ' ').toLowerCase()}
           </button>
         ))}
@@ -220,7 +285,7 @@ export function Pickups() {
         <Loading label="Loading pickups…" />
       ) : (list.data?.content.length ?? 0) === 0 ? (
         <EmptyState
-          icon="🚚"
+          icon={<Icon name="truck" size={20} />}
           title={filter === 'ALL' ? 'No pickups yet' : `No ${filter.toLowerCase().replace('_', ' ')} pickups`}
           action={
             <Button type="button" onClick={openForm}>
@@ -228,7 +293,8 @@ export function Pickups() {
             </Button>
           }
         >
-          Once a collector accepts, you can follow every stage here.
+          Once a collector accepts, you can follow every stage here — acceptance, scheduling, the weighed collection
+          and recovery.
         </EmptyState>
       ) : (
         <Card className="tight">
@@ -250,7 +316,7 @@ export function Pickups() {
                 {list.data?.content.map((pickup) => (
                   <tr key={pickup.code}>
                     <td>
-                      <Link to={`/pickups/${pickup.code}`} className="strong">
+                      <Link to={`/pickups/${pickup.code}`} className="strong mono">
                         {pickup.code}
                       </Link>
                       <div className="list-meta">{relativeTime(pickup.createdAt)}</div>
@@ -271,7 +337,11 @@ export function Pickups() {
                         <Button type="button" className="ghost small" onClick={() => cancel(pickup.code)}>
                           Cancel
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Link className="btn ghost small" to={`/pickups/${pickup.code}`}>
+                          View
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -283,8 +353,8 @@ export function Pickups() {
 
       {user?.role === 'COLLECTOR' ? (
         <Note tone="info">
-          You also have collector access — open the <Link to="/collector">collector workspace</Link> to accept jobs and record
-          weights.
+          You also have collector access — open the <Link to="/collector">collector workspace</Link> to accept jobs and
+          record weights.
         </Note>
       ) : null}
     </>

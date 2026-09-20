@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, EmptyState, Field, Loading, Note, useAsync } from '../components/ui';
+import { Button, Card, EmptyState, Field, Loading, Note, PageHead, useAsync } from '../components/ui';
+import { Icon } from '../components/icons';
 import { api } from '../lib/api';
 import { dateOnly, dateTime, kg } from '../lib/format';
 
@@ -33,23 +34,27 @@ export function History() {
   };
 
   const entries = history.data?.entries;
+  const filtered = Boolean(filters.material || filters.status || filters.from || filters.to);
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Recycling history</h1>
-          <p className="lede">
-            Only waste that a collector actually weighed and recorded appears here — the totals feed your impact figures.
-          </p>
-        </div>
-      </div>
+      <PageHead
+        eyebrow="Measured record"
+        title="Recycling history"
+        lede="Only waste that a collector actually weighed and recorded appears here. These weights are what your impact figures are built from."
+        actions={
+          <Link className="btn secondary" to="/impact">
+            <Icon name="globe" size={17} />
+            View impact
+          </Link>
+        }
+      />
 
-      <div className="grid cols-3" style={{ marginBottom: 16 }}>
+      <div className="grid cols-3" style={{ marginBottom: 18 }}>
         <div className="stat accent">
-          <div className="stat-label">Total collected</div>
+          <div className="stat-label">Collected, weighed on site</div>
           <div className="stat-value mono">{kg(history.data?.totalKg ?? 0)}</div>
-          <div className="stat-hint">Across {entries?.totalElements ?? 0} collections</div>
+          <div className="stat-hint">Across {entries?.totalElements ?? 0} recorded collections</div>
         </div>
         {(history.data?.byCategory ?? []).slice(0, 2).map((category) => (
           <div className="stat" key={category.code}>
@@ -89,11 +94,14 @@ export function History() {
         </div>
         <div className="btn-row">
           <Button type="button" onClick={apply}>
+            <Icon name="filter" size={16} />
             Apply filters
           </Button>
-          <Button type="button" className="ghost" onClick={clear}>
-            Clear
-          </Button>
+          {filtered ? (
+            <Button type="button" className="ghost" onClick={clear}>
+              Clear
+            </Button>
+          ) : null}
         </div>
       </Card>
 
@@ -101,8 +109,20 @@ export function History() {
       {history.loading ? (
         <Loading label="Loading your history…" />
       ) : (entries?.content.length ?? 0) === 0 ? (
-        <EmptyState icon="🗂️" title="Nothing collected yet">
-          When a collector weighs and records your waste, it will show up here with the exact kilograms.
+        <EmptyState
+          icon={<Icon name="archive" size={20} />}
+          title={filtered ? 'No collections matched those filters' : 'Nothing collected yet'}
+          action={
+            filtered ? (
+              <Button type="button" className="secondary small" onClick={clear}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        >
+          {filtered
+            ? 'Try a wider date range or a different material.'
+            : 'When a collector weighs and records your waste, it appears here with the exact kilograms.'}
         </EmptyState>
       ) : (
         <Card className="tight">
@@ -121,7 +141,7 @@ export function History() {
               <tbody>
                 {entries?.content.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{dateTime(entry.collectionDate)}</td>
+                    <td className="nowrap">{dateTime(entry.collectionDate)}</td>
                     <td>
                       <span className="chip">
                         <span className="swatch" style={{ background: entry.categoryColor ?? '#6B705C' }} aria-hidden="true" />
@@ -130,7 +150,9 @@ export function History() {
                     </td>
                     <td className="mono strong">{kg(entry.quantityKg)}</td>
                     <td>
-                      <Link to={`/pickups/${entry.pickupCode}`}>{entry.pickupCode}</Link>
+                      <Link to={`/pickups/${entry.pickupCode}`} className="mono">
+                        {entry.pickupCode}
+                      </Link>
                       <div className="list-meta">{entry.pickupStatus.toLowerCase()}</div>
                     </td>
                     <td>{entry.collectorOrganization ?? '—'}</td>
@@ -140,13 +162,19 @@ export function History() {
               </tbody>
             </table>
           </div>
-          <div className="btn-row" style={{ marginTop: 14 }}>
-            <Button type="button" className="secondary small" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+          <div className="btn-row" style={{ marginTop: 16 }}>
+            <Button
+              type="button"
+              className="secondary small"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
               ← Newer
             </Button>
             <span className="small muted">
-              Page {page + 1} of {Math.max(1, entries?.totalPages ?? 1)} · filters applied{' '}
-              {filters.from ? `from ${dateOnly(filters.from)}` : ''} {filters.to ? `to ${dateOnly(filters.to)}` : ''}
+              Page {page + 1} of {Math.max(1, entries?.totalPages ?? 1)}
+              {filters.from ? ` · from ${dateOnly(filters.from)}` : ''}
+              {filters.to ? ` · to ${dateOnly(filters.to)}` : ''}
             </span>
             <Button
               type="button"

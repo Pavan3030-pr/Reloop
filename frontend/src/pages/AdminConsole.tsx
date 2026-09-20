@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Button, Card, EmptyState, Field, Loading, Note, Spinner, Stat, useAsync } from '../components/ui';
+import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, Stat, useAsync } from '../components/ui';
+import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
 import { dateTime, kg, num } from '../lib/format';
 
@@ -12,10 +13,16 @@ export function AdminConsole() {
 
   return (
     <>
+      <PageHead
+        eyebrow="Administration"
+        title="Admin console"
+        lede="Review collector applications, manage accounts and the public directory, and read platform-wide collection analytics."
+      />
+
       {error ? <Note tone="error">{error}</Note> : null}
       {message ? <Note tone="success">{message}</Note> : null}
 
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Admin sections">
         {(
           [
             ['applications', 'Collector applications'],
@@ -24,7 +31,14 @@ export function AdminConsole() {
             ['analytics', 'Analytics'],
           ] as [Tab, string][]
         ).map(([key, label]) => (
-          <button key={key} type="button" className={`tab${tab === key ? ' active' : ''}`} onClick={() => setTab(key)}>
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            className={`tab${tab === key ? ' active' : ''}`}
+            onClick={() => setTab(key)}
+          >
             {label}
           </button>
         ))}
@@ -96,8 +110,7 @@ function Applications({ onError, onMessage }: TabProps) {
       {list.error ? <Note tone="error">{list.error}</Note> : null}
       {list.loading ? (
         <Loading />
-      ) : (list.data?.content.length ?? 0) === 0 ? (
-        <EmptyState icon="🧾" title="Nothing to review here">
+      ) : (list.data?.content.length ?? 0) === 0 ? (          <EmptyState icon={<Icon name="shield" size={20} />} title="Nothing to review here">
           Collector applications appear in this queue as soon as residents apply.
         </EmptyState>
       ) : (
@@ -246,7 +259,9 @@ function Users({ onError, onMessage }: TabProps) {
               ))}
             </tbody>
           </table>
-          {(list.data?.content.length ?? 0) === 0 ? <EmptyState icon="👥" title="No users matched that search" /> : null}
+          {(list.data?.content.length ?? 0) === 0 ? (
+            <EmptyState icon={<Icon name="users" size={20} />} title="No users matched that search" />
+          ) : null}
         </div>
       )}
     </Card>
@@ -371,7 +386,7 @@ function Points({ onError, onMessage }: TabProps) {
         {list.loading ? (
           <Loading />
         ) : (list.data?.length ?? 0) === 0 ? (
-          <EmptyState icon="📍" title="No collection points yet">
+          <EmptyState icon={<Icon name="pin" size={20} />} title="No collection points yet">
             Add the first verified drop-off location.
           </EmptyState>
         ) : (
@@ -421,7 +436,7 @@ function Analytics() {
       <div className="grid cols-2" style={{ marginTop: 16 }}>
         <Card title="Pickups by status">
           {statusEntries.length === 0 ? (
-            <EmptyState icon="📊" title="No pickup activity yet" />
+            <EmptyState icon={<Icon name="trending" size={20} />} title="No pickup activity yet" />
           ) : (
             <div className="table-wrap">
               <table className="table">
@@ -439,7 +454,7 @@ function Analytics() {
         </Card>
         <Card title="Collected weight by material">
           {categoryEntries.length === 0 ? (
-            <EmptyState icon="⚖️" title="No collections recorded yet" />
+            <EmptyState icon={<Icon name="scale" size={20} />} title="No collections recorded yet" />
           ) : (
             <div className="table-wrap">
               <table className="table">

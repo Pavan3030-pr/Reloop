@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { Icon, type IconName } from './icons';
 import type { PickupStatus } from '../lib/types';
 import { statusLabel, statusTone } from '../lib/format';
 
 /**
- * Primary action button. Layout variants (secondary/ghost/danger/small) are passed
- * through the class list so pages can compose them freely.
+ * Primary action button. Layout variants (secondary/ghost/danger/small/lg) are
+ * passed through the class list so pages can compose them freely.
  */
 export function Button({
   children,
@@ -63,14 +64,21 @@ export function Stat({
   value,
   hint,
   accent = false,
+  icon,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   accent?: boolean;
+  icon?: IconName;
 }) {
   return (
     <div className={`stat${accent ? ' accent' : ''}`}>
+      {icon ? (
+        <span className="stat-icon" aria-hidden="true">
+          <Icon name={icon} size={17} />
+        </span>
+      ) : null}
       <div className="stat-label">{label}</div>
       <div className="stat-value mono">{value}</div>
       {hint ? <div className="stat-hint">{hint}</div> : null}
@@ -85,24 +93,24 @@ export function Note({
 }: {
   tone?: 'info' | 'error' | 'success' | 'warning';
   children: ReactNode;
-  icon?: string;
+  icon?: ReactNode;
 }) {
-  const fallback = { info: 'ℹ️', error: '⚠️', success: '✅', warning: '⚠️' }[tone];
+  const fallback: Record<string, IconName> = { info: 'info', error: 'alert', success: 'checkCircle', warning: 'alert' };
   return (
     <div className={`note ${tone}`} role={tone === 'error' ? 'alert' : undefined}>
-      <span aria-hidden="true">{icon ?? fallback}</span>
+      {typeof icon === 'string' ? <span aria-hidden="true">{icon}</span> : (icon ?? <Icon name={fallback[tone]} size={17} />)}
       <div>{children}</div>
     </div>
   );
 }
 
 export function EmptyState({
-  icon = '🌱',
+  icon,
   title,
   children,
   action,
 }: {
-  icon?: string;
+  icon?: ReactNode;
   title: string;
   children?: ReactNode;
   action?: ReactNode;
@@ -110,11 +118,15 @@ export function EmptyState({
   return (
     <div className="empty">
       <span className="empty-icon" aria-hidden="true">
-        {icon}
+        {icon ?? <Icon name="leaf" size={20} />}
       </span>
       <div className="strong">{title}</div>
-      {children ? <div className="small" style={{ marginTop: 6 }}>{children}</div> : null}
-      {action ? <div style={{ marginTop: 14 }}>{action}</div> : null}
+      {children ? (
+        <div className="small" style={{ marginTop: 6, maxWidth: '48ch', marginInline: 'auto' }}>
+          {children}
+        </div>
+      ) : null}
+      {action ? <div style={{ marginTop: 16 }}>{action}</div> : null}
     </div>
   );
 }
@@ -134,6 +146,64 @@ export function CategoryChip({ name, colorHex }: { name: string; colorHex?: stri
       <span className="swatch" style={{ background: colorHex ?? '#6B705C' }} aria-hidden="true" />
       {name}
     </span>
+  );
+}
+
+/** Standard page opener: title, supporting line and optional right-aligned actions. */
+export function PageHead({
+  title,
+  lede,
+  actions,
+  eyebrow,
+}: {
+  title: ReactNode;
+  lede?: ReactNode;
+  actions?: ReactNode;
+  eyebrow?: string;
+}) {
+  return (
+    <div className="page-head">
+      <div style={{ minWidth: 0 }}>
+        {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
+        <h1>{title}</h1>
+        {lede ? <p className="lede">{lede}</p> : null}
+      </div>
+      {actions ? (
+        <>
+          <div className="spacer" />
+          <div className="actions">{actions}</div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Circular confidence readout used by the waste scanner. */
+export function Gauge({ value, label }: { value: number | null; label?: string }) {
+  const pct = value === null || value === undefined ? 0 : Math.max(0, Math.min(1, Number(value)));
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="gauge" role="img" aria-label={label ?? `${Math.round(pct * 100)}%`}>
+      <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+        <circle cx="46" cy="46" r={radius} fill="none" stroke="var(--sage-2)" strokeWidth="7" />
+        <circle
+          cx="46"
+          cy="46"
+          r={radius}
+          fill="none"
+          stroke="var(--forest)"
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference}`}
+          strokeDashoffset={circumference * (1 - pct)}
+          style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.2,0.7,0.3,1)' }}
+        />
+      </svg>
+      <div className="gauge-label">
+        {value === null || value === undefined ? '—' : `${Math.round(pct * 100)}%`}
+      </div>
+    </div>
   );
 }
 
