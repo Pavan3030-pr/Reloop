@@ -11,6 +11,7 @@ import type {
   Notification,
   Page,
   Pickup,
+  PickupSummary,
   PickupStatus,
   Profile,
   Scan,
@@ -274,8 +275,14 @@ export const api = {
   }) => request<CollectionPartner>('/api/collectors/apply', { method: 'POST', body: input }),
   myCollectorApplication: () => request<CollectionPartner>('/api/collectors/me'),
   collectorDashboard: () => request<CollectorDashboard>('/api/collector/dashboard'),
-  collectorPickups: (scope: 'available' | 'mine', page = 0, size = 20) =>
-    request<Page<Pickup>>('/api/collector/pickups', { query: { scope, page, size } }),
+  /** The open pool: redacted summaries only, so no resident's address is exposed before assignment. */
+  availablePickups: (query: { lat?: number; lng?: number; page?: number; size?: number } = {}) =>
+    request<Page<PickupSummary>>('/api/collector/pickups', {
+      query: { scope: 'available', lat: query.lat, lng: query.lng, page: query.page ?? 0, size: query.size ?? 20 },
+    }),
+  /** Jobs assigned to this organisation — full detail, including the address and photo. */
+  myPickups: (page = 0, size = 20) =>
+    request<Page<Pickup>>('/api/collector/pickups', { query: { scope: 'mine', page, size } }),
   acceptPickup: (code: string) => request<Pickup>(`/api/collector/pickups/${code}/accept`, { method: 'PATCH' }),
   schedulePickup: (code: string, scheduledAt: string) =>
     request<Pickup>(`/api/collector/pickups/${code}/schedule`, { method: 'PATCH', body: { scheduledAt } }),
@@ -284,7 +291,7 @@ export const api = {
       method: 'PATCH',
       body: { actualQuantityKg, notes },
     }),
-  updatePickupStatus: (code: string, status: 'PROCESSING' | 'RECOVERED') =>
+  updatePickupStatus: (code: string, status: 'PROCESSING' | 'RECOVERED' | 'RECYCLED') =>
     request<Pickup>(`/api/collector/pickups/${code}/status`, { method: 'PATCH', body: { status } }),
   releasePickup: (code: string, reason?: string) =>
     request<Pickup>(`/api/collector/pickups/${code}/release`, { method: 'PATCH', query: { reason } }),

@@ -95,9 +95,28 @@ export type PickupStatus =
   | 'PICKED_UP'
   | 'PROCESSING'
   | 'RECOVERED'
+  | 'RECYCLED'
   | 'CANCELLED';
 
 export type TimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING';
+
+/**
+ * What a collector sees about a request before it is assigned to them: material, city and a
+ * kilometre-rounded distance. The resident's address, coordinates, notes and photo are not part of
+ * this payload — the API withholds them until the request is assigned. See Pickup for the full
+ * record, which a collector gets for their own jobs.
+ */
+export interface PickupSummary {
+  code: string;
+  status: PickupStatus;
+  category: WasteCategory | null;
+  estimatedQuantityKg: number;
+  city: string;
+  pickupDate: string;
+  timeSlot: TimeSlot;
+  createdAt: string;
+  approximateDistanceKm: number | null;
+}
 
 export interface Pickup {
   code: string;

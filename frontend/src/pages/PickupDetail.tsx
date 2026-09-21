@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Button, Card, Loading, Note, PageHead, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
-import { PICKUP_STAGES, dateOnly, dateTime, kg } from '../lib/format';
+import { PICKUP_STAGES, dateOnly, dateTime, kg, stageIndex as stageIndexOf } from '../lib/format';
 
 export function PickupDetail() {
   const { code = '' } = useParams();
@@ -29,8 +29,10 @@ export function PickupDetail() {
   if (!pickup.data) return null;
 
   const data = pickup.data;
-  const stageIndex = PICKUP_STAGES.findIndex((stage) => stage.key === data.status);
+  const stageIndex = stageIndexOf(data.status);
   const cancelled = data.status === 'CANCELLED';
+  const recycled = data.status === 'RECYCLED';
+  const finished = data.status === 'RECOVERED' || recycled;
 
   const timestamps: Record<string, string | null> = {
     REQUESTED: data.createdAt,
@@ -69,7 +71,9 @@ export function PickupDetail() {
                     {done ? <Icon name="check" size={12} /> : index + 1}
                   </span>
                   <span>
-                    <span className="strong">{stage.label}</span>
+                    <span className="strong">
+                      {recycled && index === PICKUP_STAGES.length - 1 ? 'Material recycled' : stage.label}
+                    </span>
                     {timestamps[stage.key] ? <span className="muted small"> · {dateTime(timestamps[stage.key])}</span> : null}
                     {current ? (
                       <span className="pill green" style={{ marginLeft: 8 }}>
@@ -91,11 +95,11 @@ export function PickupDetail() {
             </div>
           ) : null}
 
-          {data.status === 'RECOVERED' ? (
+          {finished ? (
             <div className="divider" />
           ) : null}
 
-          {['PICKED_UP', 'PROCESSING', 'RECOVERED'].includes(data.status) && data.actualQuantityKg !== null ? (
+          {['PICKED_UP', 'PROCESSING', 'RECOVERED', 'RECYCLED'].includes(data.status) && data.actualQuantityKg !== null ? (
             <div className="panel soft" style={{ padding: 16, marginTop: 4 }}>
               <div className="stat-label">Collected weight</div>
               <div className="stat-value mono">{kg(data.actualQuantityKg)}</div>

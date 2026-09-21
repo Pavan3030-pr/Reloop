@@ -81,6 +81,7 @@ export function History() {
             <select id="h-status" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>
               <option value="RECOVERED">Recovered</option>
+              <option value="RECYCLED">Recycled</option>
               <option value="PROCESSING">Processing</option>
               <option value="PICKED_UP">Picked up</option>
             </select>

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Card, EmptyState, Loading, Note, PageHead, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api } from '../lib/api';
-import { PICKUP_STAGES, dateOnly, kg, relativeTime, statusLabel } from '../lib/format';
+import { dateOnly, kg, relativeTime, stageLabel, stageProgress } from '../lib/format';
 import { useAuth } from '../context/AuthContext';
 
 function greeting(): string {
@@ -23,10 +23,9 @@ export function Dashboard() {
   const error = profile.error ?? impact.error ?? pickups.error;
   const firstName = (profile.data?.fullName ?? user?.email ?? '').split(/[\s@]/)[0] || 'there';
 
-  const openPickups = pickups.data?.content.filter((p) => !['RECOVERED', 'CANCELLED'].includes(p.status)) ?? [];
+  const openPickups = pickups.data?.content.filter((p) => !['RECOVERED', 'RECYCLED', 'CANCELLED'].includes(p.status)) ?? [];
   const current = openPickups[0] ?? null;
-  const stageIndex = current ? PICKUP_STAGES.findIndex((stage) => stage.key === current.status) : -1;
-  const progress = stageIndex >= 0 ? ((stageIndex + 1) / PICKUP_STAGES.length) * 100 : 0;
+  const progress = current ? stageProgress(current.status) : 0;
   const co2e = impact.data?.byCategory.reduce((sum, c) => sum + Number(c.estimatedCo2eKgSaved), 0) ?? 0;
 
   return (
@@ -87,7 +86,7 @@ export function Dashboard() {
                 <span style={{ width: `${progress}%` }} />
               </div>
               <div className="small muted" style={{ marginTop: 10 }}>
-                {stageIndex >= 0 ? PICKUP_STAGES[stageIndex].label : statusLabel(current.status)}
+                {stageLabel(current.status)}
                 {current.collectorOrganization ? ` · ${current.collectorOrganization}` : ' · awaiting a collector'}
               </div>
               <div className="btn-row" style={{ marginTop: 16 }}>

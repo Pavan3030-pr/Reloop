@@ -1,7 +1,10 @@
 package app.reloop.exception;
 
+import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.StaleStateException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -89,6 +92,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of(403, "Forbidden", "You do not have permission to perform this action"));
+    }
+
+    /**
+     * Lost-update conflicts (and any Hibernate/JPA flavour of them) become a 409 with an
+     * actionable message rather than a 500. The clearest example: two collectors accepting the
+     * same pickup at the same instant — one wins, the other is told to reload.
+     */
+    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class,
+            StaleStateException.class})
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(Exception ex) {
+        log.info("Concurrent modification rejected: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(409, "Conflict",
+                        "Someone else changed this request at the same moment. Reload it and try again."));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

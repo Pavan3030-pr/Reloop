@@ -57,6 +57,7 @@ const STATUS_LABELS: Record<PickupStatus, string> = {
   PICKED_UP: 'Picked up',
   PROCESSING: 'Processing',
   RECOVERED: 'Recovered',
+  RECYCLED: 'Recycled',
   CANCELLED: 'Cancelled',
 };
 
@@ -79,6 +80,8 @@ export function statusTone(status: PickupStatus | string | null | undefined): 'g
       return 'amber';
     case 'RECOVERED':
       return 'green';
+    case 'RECYCLED':
+      return 'green';
     case 'CANCELLED':
       return 'red';
     default:
@@ -94,6 +97,30 @@ export const PICKUP_STAGES: { key: string; label: string }[] = [
   { key: 'PROCESSING', label: 'At the recycling facility' },
   { key: 'RECOVERED', label: 'Material recovered' },
 ];
+
+/**
+ * RECOVERED and RECYCLED are two equally valid terminal outcomes, not consecutive steps, so
+ * RECYCLED is deliberately kept out of PICKUP_STAGES and treated as a fully complete journey here.
+ */
+export function stageProgress(status: PickupStatus | string | null | undefined): number {
+  if (!status) return 0;
+  if (status === 'RECYCLED') return 100;
+  const index = PICKUP_STAGES.findIndex((stage) => stage.key === status);
+  return index < 0 ? 0 : ((index + 1) / PICKUP_STAGES.length) * 100;
+}
+
+export function stageLabel(status: PickupStatus | string | null | undefined): string {
+  if (!status) return '—';
+  if (status === 'RECYCLED') return 'Material recycled';
+  return PICKUP_STAGES.find((stage) => stage.key === status)?.label ?? statusLabel(status);
+}
+
+/** Index of the current stage in the linear journey; RECYCLED counts as the final stage. */
+export function stageIndex(status: PickupStatus | string | null | undefined): number {
+  if (!status) return -1;
+  if (status === 'RECYCLED') return PICKUP_STAGES.length - 1;
+  return PICKUP_STAGES.findIndex((stage) => stage.key === status);
+}
 
 export function todayISO(offsetDays = 0): string {
   const date = new Date();

@@ -3,19 +3,16 @@ import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, Stat, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
-import { PICKUP_STAGES, dateOnly, kg, relativeTime, toLocalDateTimeInput } from '../lib/format';
-import type { Pickup } from '../lib/types';
-
-function stageProgress(status: Pickup['status']): number {
-  const index = PICKUP_STAGES.findIndex((stage) => stage.key === status);
-  if (index < 0) return 0;
-  return ((index + 1) / PICKUP_STAGES.length) * 100;
-}
+import { dateOnly, kg, relativeTime, stageLabel, stageProgress, toLocalDateTimeInput } from '../lib/format';
+import type { Pickup, PickupSummary } from '../lib/types';
 
 export function CollectorWorkspace() {
   const dashboard = useAsync(() => api.collectorDashboard(), []);
   const [scope, setScope] = useState<'available' | 'mine'>('available');
-  const jobs = useAsync(() => api.collectorPickups(scope, 0, 50), [scope]);
+  // The open pool comes back redacted (no address, no contact, no photo until assignment).
+  const available = useAsync(() => api.availablePickups({ size: 50 }), []);
+  const mine = useAsync(() => api.myPickups(0, 50), []);
+  const jobs = scope === 'available' ? available : mine;
 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -28,7 +25,8 @@ export function CollectorWorkspace() {
 
   const refresh = () => {
     dashboard.reload();
-    jobs.reload();
+    available.reload();
+    mine.reload();
   };
 
   const run = async (code: string, action: () => Promise<unknown>, successMessage: string) => {
@@ -63,7 +61,71 @@ export function CollectorWorkspace() {
 
   const stats = dashboard.data;
 
-  const renderJob = (pickup: Pickup, mode: 'available' | 'mine') => {
+  /** Card for a request in the open pool: material, city and a coarse distance only. */
+  const renderAvailable = (summary: PickupSummary) => {
+    const busy = busyCode === summary.code;
+
+    return (
+      <Card key={summary.code} className="lift">
+        <div className="card-head">
+          <span className="icon-tile" aria-hidden="true">
+            <Icon name="truck" size={17} />
+          </span>
+          <h3 style={{ margin: 0 }} className="mono">
+            {summary.code}
+          </h3>
+          <span className="spacer" />
+          <StatusPill status={summary.status} />
+        </div>
+
+        <dl className="readout" style={{ marginBottom: 14 }}>
+          <div className="readout-row">
+            <dt>Material</dt>
+            <dd>
+              {summary.category?.name ?? '—'}
+              <span className="muted small"> · est. {kg(summary.estimatedQuantityKg)}</span>
+            </dd>
+          </div>
+          <div className="readout-row">
+            <dt>Area</dt>
+            <dd>{summary.city}</dd>
+          </div>
+          {summary.approximateDistanceKm !== null ? (
+            <div className="readout-row">
+              <dt>Distance</dt>
+              <dd>≈ {summary.approximateDistanceKm} km</dd>
+            </div>
+          ) : null}
+          <div className="readout-row">
+            <dt>Window</dt>
+            <dd>
+              {dateOnly(summary.pickupDate)} · {summary.timeSlot.toLowerCase()}
+              <div className="list-meta">requested {relativeTime(summary.createdAt)}</div>
+            </dd>
+          </div>
+        </dl>
+
+        <div className="small muted" style={{ marginBottom: 12 }}>
+          The resident's address, contact details and photo are released once you accept this job.
+        </div>
+
+        <div className="btn-row">
+          <Button
+            type="button"
+            className="small"
+            disabled={busy}
+            onClick={() => run(summary.code, () => api.acceptPickup(summary.code), `You accepted ${summary.code}.`)}
+          >
+            {busy ? <Spinner onPrimary /> : <Icon name="check" size={15} />}
+            Accept job
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
+  /** Card for a job assigned to this organisation: full detail, and the lifecycle actions. */
+  const renderJob = (pickup: Pickup) => {
     const busy = busyCode === pickup.code;
     const active = ['ACCEPTED', 'SCHEDULED', 'PICKED_UP', 'PROCESSING'].includes(pickup.status);
 
@@ -133,24 +195,12 @@ export function CollectorWorkspace() {
               <span style={{ width: `${stageProgress(pickup.status)}%` }} />
             </div>
             <div className="small muted" style={{ marginTop: 8 }}>
-              {PICKUP_STAGES.find((stage) => stage.key === pickup.status)?.label ?? pickup.status}
+              {stageLabel(pickup.status)}
             </div>
           </>
         ) : null}
 
         <div className="btn-row" style={{ marginTop: 16 }}>
-          {mode === 'available' ? (
-            <Button
-              type="button"
-              className="small"
-              disabled={busy}
-              onClick={() => run(pickup.code, () => api.acceptPickup(pickup.code), `You accepted ${pickup.code}.`)}
-            >
-              {busy ? <Spinner onPrimary /> : <Icon name="check" size={15} />}
-              Accept job
-            </Button>
-          ) : (
-            <>
               {pickup.status === 'ACCEPTED' ? (
                 <Button
                   type="button"
@@ -194,17 +244,30 @@ export function CollectorWorkspace() {
                 </Button>
               ) : null}
               {pickup.status === 'PROCESSING' ? (
-                <Button
-                  type="button"
-                  className="small"
-                  disabled={busy}
-                  onClick={() =>
-                    run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECOVERED'), `${pickup.code} marked recovered.`)
-                  }
-                >
-                  <Icon name="recycle" size={15} />
-                  Mark recovered
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    className="small"
+                    disabled={busy}
+                    onClick={() =>
+                      run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECOVERED'), `${pickup.code} marked recovered.`)
+                    }
+                  >
+                    <Icon name="archive" size={15} />
+                    Mark recovered
+                  </Button>
+                  <Button
+                    type="button"
+                    className="secondary small"
+                    disabled={busy}
+                    onClick={() =>
+                      run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECYCLED'), `${pickup.code} marked recycled.`)
+                    }
+                  >
+                    <Icon name="recycle" size={15} />
+                    Mark recycled
+                  </Button>
+                </>
               ) : null}
               {pickup.status === 'ACCEPTED' || pickup.status === 'SCHEDULED' ? (
                 <Button
@@ -216,8 +279,6 @@ export function CollectorWorkspace() {
                   Release
                 </Button>
               ) : null}
-            </>
-          )}
         </div>
 
         {scheduling?.code === pickup.code ? (
@@ -358,18 +419,23 @@ export function CollectorWorkspace() {
       {jobs.error ? <Note tone="error">{jobs.error}</Note> : null}
       {jobs.loading ? (
         <Loading label="Loading jobs…" />
-      ) : (jobs.data?.content.length ?? 0) === 0 ? (
-        <EmptyState
-          icon={<Icon name={scope === 'available' ? 'truck' : 'box'} size={20} />}
-          title={scope === 'available' ? 'No open requests right now' : 'You have no assigned jobs'}
-        >
-          {scope === 'available'
-            ? 'New resident requests appear here as soon as they are created.'
-            : 'Accept a request from the available list to start collecting.'}
+      ) : scope === 'available' ? (
+        (available.data?.content.length ?? 0) === 0 ? (
+          <EmptyState icon={<Icon name="truck" size={20} />} title="No open requests right now">
+            New resident requests appear here as soon as they are created.
+          </EmptyState>
+        ) : (
+          <div className="grid cols-2" style={{ alignItems: 'start' }}>
+            {available.data?.content.map((summary) => renderAvailable(summary))}
+          </div>
+        )
+      ) : (mine.data?.content.length ?? 0) === 0 ? (
+        <EmptyState icon={<Icon name="box" size={20} />} title="You have no assigned jobs">
+          Accept a request from the available list to start collecting.
         </EmptyState>
       ) : (
         <div className="grid cols-2" style={{ alignItems: 'start' }}>
-          {jobs.data?.content.map((pickup) => renderJob(pickup, scope))}
+          {mine.data?.content.map((pickup) => renderJob(pickup))}
         </div>
       )}
     </>

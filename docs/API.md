@@ -69,7 +69,7 @@ All errors share one shape:
 | GET | `/api/pickups/{code}` | Requester, assigned collector, or admin only. |
 | PATCH | `/api/pickups/{code}/cancel` | Only while status is `REQUESTED`; otherwise `409`. |
 
-Lifecycle: `REQUESTED → ACCEPTED → SCHEDULED → PICKED_UP → PROCESSING → RECOVERED`, with
+Lifecycle: `REQUESTED → ACCEPTED → SCHEDULED → PICKED_UP → PROCESSING → RECOVERED | RECYCLED`, with
 `CANCELLED` reachable from `REQUESTED`. Invalid transitions return `409`.
 
 ## Collector
@@ -81,11 +81,11 @@ Requires role `COLLECTOR` **and** a `VERIFIED` partner record.
 | POST | `/api/collectors/apply` | `{organizationName, contactPerson, phone, email?, address, city, pincode?, operatingHours?, registrationNumber?, materialCodes[]}` → `PENDING` application. |
 | GET | `/api/collectors/me` | Own application, or `404`. |
 | GET | `/api/collector/dashboard` | `{availableRequests, activeJobs, completedJobs, todayPickups, totalKgCollected, totalCollections}`. |
-| GET | `/api/collector/pickups` | `scope=available` (all `REQUESTED`) or `scope=mine` (assigned to this partner). |
-| PATCH | `/api/collector/pickups/{code}/accept` | Claims an available request. |
+| GET | `/api/collector/pickups` | `scope=available` (default): the open pool, **redacted** to `{code, status, category, estimatedQuantityKg, city, pickupDate, timeSlot, createdAt, approximateDistanceKm}`. Optional `lat`/`lng` add a distance rounded to whole kilometres. `scope=mine`: full records assigned to this partner, including address, contact and photo. A resident's address, coordinates, notes and photo are never returned for a request this collector has not been assigned. |
+| PATCH | `/api/collector/pickups/{code}/accept` | Claims an available request. Safe under concurrency: simultaneous accepts leave exactly one winner, and the loser gets `409` rather than a false confirmation (optimistic lock on `pickup_requests.version`). |
 | PATCH | `/api/collector/pickups/{code}/schedule` | `{scheduledAt}` — must be in the future. |
 | PATCH | `/api/collector/pickups/{code}/collect` | `{actualQuantityKg, notes?}` — writes the `collected_waste` record that history and impact both read. One record per pickup. |
-| PATCH | `/api/collector/pickups/{code}/status` | `{status}` — `PROCESSING` or `RECOVERED` only. |
+| PATCH | `/api/collector/pickups/{code}/status` | `{status}` — `PROCESSING`, `RECOVERED` or `RECYCLED`. Only `PICKED_UP → PROCESSING` and `PROCESSING → RECOVERED\|RECYCLED` are legal; both endings are terminal. |
 | PATCH | `/api/collector/pickups/{code}/release` | Returns an accepted/scheduled request to the pool. |
 
 Every transition notifies the resident.

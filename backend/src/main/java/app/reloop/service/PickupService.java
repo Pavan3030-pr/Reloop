@@ -4,6 +4,7 @@ import app.reloop.dto.pickup.CollectPickupRequest;
 import app.reloop.dto.pickup.CollectorDashboardDto;
 import app.reloop.dto.pickup.CreatePickupRequest;
 import app.reloop.dto.pickup.PickupDto;
+import app.reloop.dto.pickup.PickupSummaryDto;
 import app.reloop.dto.pickup.SchedulePickupRequest;
 import app.reloop.dto.pickup.StatusUpdateRequest;
 import app.reloop.dto.waste.WasteCategoryDto;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -137,14 +139,27 @@ public class PickupService {
                 .map(this::toDto);
     }
 
+    /**
+     * The open pool. Deliberately returns redacted {@link PickupSummaryDto} records: a collector
+     * deciding whether to take a job needs the material, the city and a rough distance — not the
+     * household's street address, coordinates, gate notes and photo. Full detail is released once
+     * the request is assigned to them (see {@link #getByCode}).
+     */
     @Transactional(readOnly = true)
-    public Page<PickupDto> availableRequests(int page, int size) {
+    public Page<PickupSummaryDto> availableSummaries(BigDecimal callerLat, BigDecimal callerLng,
+                                                    int page, int size) {
         Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 50));
         return pickupRequestRepository
                 .findAllByStatusOrderByCreatedAtDesc(PickupStatus.REQUESTED, pageable)
-                .map(this::toDto);
+                .map(pickup -> toSummary(pickup, callerLat, callerLng));
     }
 
+    /**
+     * Claims a request for a collector. {@code PickupRequest.version} makes this safe under
+     * concurrency: if two collectors accept at the same instant, the second update matches no rows
+     * and the transaction fails with an optimistic-lock conflict (HTTP 409) instead of both
+     * reporting success. Both the notification and the assignment roll back together.
+     */
     @Transactional
     public PickupDto accept(CollectionPartner partner, String code) {
         PickupRequest pickup = findPickup(code);
@@ -152,6 +167,10 @@ public class PickupService {
             throw new ConflictException("Invalid status transition: " + pickup.getStatus()
                     + " → ACCEPTED. This request is no longer available.");
         }
+        // Flush the claim immediately so a losing racer fails here, inside this method, rather than
+        // at commit — the error still maps to a conflict either way, but this keeps the failure
+        // attached to the action that caused it.
+        pickupRequestRepository.saveAndFlush(pickup);
         pickup.setCollector(partner);
         pickup.setStatus(PickupStatus.ACCEPTED);
         pickup.setAcceptedAt(Instant.now());
@@ -229,8 +248,9 @@ public class PickupService {
         } catch (IllegalArgumentException e) {
             throw new BadRequestException("Unknown status: " + request.status());
         }
-        if (target != PickupStatus.PROCESSING && target != PickupStatus.RECOVERED) {
-            throw new BadRequestException("Only PROCESSING or RECOVERED can be set here");
+        if (target != PickupStatus.PROCESSING && target != PickupStatus.RECOVERED
+                && target != PickupStatus.RECYCLED) {
+            throw new BadRequestException("Only PROCESSING, RECOVERED or RECYCLED can be set here");
         }
         if (actor.getRole() != Role.ADMIN) {
             CollectionPartner partner = collectorService.verifiedPartnerOf(actor);
@@ -238,7 +258,8 @@ public class PickupService {
         }
         boolean processing = pickup.getStatus() == PickupStatus.PICKED_UP && target == PickupStatus.PROCESSING;
         boolean recovered = pickup.getStatus() == PickupStatus.PROCESSING && target == PickupStatus.RECOVERED;
-        if (!processing && !recovered) {
+        boolean recycled = pickup.getStatus() == PickupStatus.PROCESSING && target == PickupStatus.RECYCLED;
+        if (!processing && !recovered && !recycled) {
             throw new ConflictException("Invalid status transition: " + pickup.getStatus()
                     + " → " + target);
         }
@@ -246,20 +267,59 @@ public class PickupService {
         if (target == PickupStatus.PROCESSING) {
             pickup.setProcessingAt(Instant.now());
         } else {
+            // RECOVERED and RECYCLED are both terminal; share the completion timestamp.
             pickup.setRecoveredAt(Instant.now());
         }
         PickupDto dto = toDto(pickupRequestRepository.save(pickup));
-        String title = target == PickupStatus.PROCESSING
-                ? "Your collection has moved to processing"
-                : "Your waste has been recovered";
-        String message = target == PickupStatus.PROCESSING
-                ? "Request " + pickup.getCode() + " is now being processed by "
-                  + pickup.getCollector().getOrganizationName() + "."
-                : "Request " + pickup.getCode() + " completed the recovery process. Thank you for closing the loop!";
-        notificationService.create(pickup.getUser(),
-                target == PickupStatus.PROCESSING ? "PICKUP_PROCESSING" : "PICKUP_RECOVERED",
-                title, message, pickup.getId());
+        // An admin can drive this transition too, and the organisation is read only for the
+        // notification text — never assume the collector is set.
+        String organisation = pickup.getCollector() != null
+                ? pickup.getCollector().getOrganizationName()
+                : "the collection partner";
+        String title;
+        String message;
+        String type;
+        switch (target) {
+            case PROCESSING -> {
+                title = "Your collection has moved to processing";
+                message = "Request " + pickup.getCode() + " is now being processed by " + organisation + ".";
+                type = "PICKUP_PROCESSING";
+            }
+            case RECYCLED -> {
+                title = "Your waste has been recycled";
+                message = "Request " + pickup.getCode() + " was accepted into a recycling process by "
+                        + organisation + ". Thank you for closing the loop!";
+                type = "PICKUP_RECYCLED";
+            }
+            default -> {
+                title = "Your waste has been recovered";
+                message = "Request " + pickup.getCode() + " completed the recovery process. Thank you for closing the loop!";
+                type = "PICKUP_RECOVERED";
+            }
+        }
+        notificationService.create(pickup.getUser(), type, title, message, pickup.getId());
         return dto;
+    }
+
+    /** Redacted projection for the open pool. See {@link PickupSummaryDto}. */
+    public PickupSummaryDto toSummary(PickupRequest pickup, BigDecimal callerLat, BigDecimal callerLng) {
+        BigDecimal distance = null;
+        if (callerLat != null && callerLng != null && pickup.getLatitude() != null && pickup.getLongitude() != null) {
+            double km = GeoUtils.distanceKm(callerLat.doubleValue(), callerLng.doubleValue(),
+                    GeoUtils.toDouble(pickup.getLatitude(), 0), GeoUtils.toDouble(pickup.getLongitude(), 0));
+            // Coarse on purpose: enough to judge the trip, too rough to locate a home.
+            distance = BigDecimal.valueOf(Math.max(1, Math.round(km)));
+        }
+        return new PickupSummaryDto(
+                pickup.getCode(),
+                pickup.getStatus() != null ? pickup.getStatus().name() : null,
+                pickup.getCategory() != null ? WasteCategoryDto.from(pickup.getCategory()) : null,
+                pickup.getEstimatedQuantityKg(),
+                pickup.getCity(),
+                pickup.getPickupDate(),
+                pickup.getTimeSlot() != null ? pickup.getTimeSlot().name() : null,
+                pickup.getCreatedAt(),
+                distance);
     }
 
     @Transactional

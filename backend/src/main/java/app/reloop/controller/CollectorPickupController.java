@@ -3,6 +3,7 @@ package app.reloop.controller;
 import app.reloop.dto.pickup.CollectPickupRequest;
 import app.reloop.dto.pickup.CollectorDashboardDto;
 import app.reloop.dto.pickup.PickupDto;
+import app.reloop.dto.pickup.PickupSummaryDto;
 import app.reloop.dto.pickup.SchedulePickupRequest;
 import app.reloop.dto.pickup.StatusUpdateRequest;
 import app.reloop.security.SecurityUtils;
@@ -31,15 +32,28 @@ public class CollectorPickupController {
     private final PickupService pickupService;
     private final CollectorService collectorService;
 
-    @GetMapping("/pickups")
-    public Page<PickupDto> pickups(@RequestParam(name = "scope", defaultValue = "available") String scope,
-                                   @RequestParam(defaultValue = "0") int page,
-                                   @RequestParam(defaultValue = "20") int size) {
+    /**
+     * Work already assigned to this organisation — full detail (address, contact, photo) is
+     * appropriate here because the collector has committed to the job.
+     */
+    @GetMapping(value = "/pickups", params = "scope=mine")
+    public Page<PickupDto> myPickups(@RequestParam(defaultValue = "0") int page,
+                                     @RequestParam(defaultValue = "20") int size) {
         var partner = collectorService.verifiedPartnerOf(SecurityUtils.currentUser());
-        if ("mine".equalsIgnoreCase(scope)) {
-            return pickupService.assignedTo(partner, page, size);
-        }
-        return pickupService.availableRequests(page, size);
+        return pickupService.assignedTo(partner, page, size);
+    }
+
+    /**
+     * The open pool, redacted. Optional {@code lat}/{@code lng} add an approximate (1 km-rounded)
+     * distance so a collector can judge the trip without learning where anyone lives.
+     */
+    @GetMapping("/pickups")
+    public Page<PickupSummaryDto> availablePickups(
+            @RequestParam(name = "lat", required = false) java.math.BigDecimal lat,
+            @RequestParam(name = "lng", required = false) java.math.BigDecimal lng,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return pickupService.availableSummaries(lat, lng, page, size);
     }
 
     @PatchMapping("/pickups/{code}/accept")
