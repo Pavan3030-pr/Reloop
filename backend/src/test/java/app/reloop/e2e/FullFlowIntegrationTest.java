@@ -18,6 +18,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.nio.charset.StandardCharsets;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -675,6 +677,30 @@ class FullFlowIntegrationTest {
         JsonNode newPassword = post("/api/auth/login", null,
                 Map.of("email", userEmail, "password", "New#Passw0rd9"));
         assertThat(newPassword.path("__status").asInt()).isEqualTo(200);
+    }
+
+    @Test
+    @Order(19)
+    void step19_scanUploadContentDecidesNotTheFilenameOrDeclaredType() {
+        // Regression: a genuine PNG was rejected with "Only JPG, PNG, or WEBP images are supported"
+        // when the filename carried no extension and the client declared a generic content type
+        // (mobile galleries and clipboard paste do exactly this). The bytes must decide.
+        JsonNode saved = postMultipart("/api/waste/scans", userToken, Map.of(
+                "categoryId", plasticCategoryId,
+                "detectedItem", "Rinsed PET bottle"),
+                "image", pngBytes, "photo", "application/octet-stream");
+
+        assertThat(saved.path("__status").asInt()).isEqualTo(201);
+        assertThat(saved.path("imageUrl").asText()).endsWith(".png");
+        assertThat(saved.path("imageUrl").asText()).contains("/uploads/");
+
+        // Bytes that are not an image are still refused, whatever they are called.
+        JsonNode rejected = postMultipart("/api/waste/scans", userToken, Map.of(
+                "categoryId", plasticCategoryId,
+                "detectedItem", "Not an image"),
+                "image", "plain text, not an image".getBytes(StandardCharsets.UTF_8), "payload.png", "image/png");
+        assertThat(rejected.path("__status").asInt()).isEqualTo(400);
+        assertThat(rejected.path("message").asText()).containsIgnoringCase("JPG, PNG, or WEBP");
     }
 
     // ------------------------------------------------------------------ utils

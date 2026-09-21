@@ -16,14 +16,22 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Stores uploaded images. Only the "local" provider is implemented in this build;
+ * Validates and stores uploaded images. Only the "local" provider is implemented in this build;
  * production deployments should swap in an S3-compatible provider (e.g. Supabase Storage)
  * behind the same interface-style API.
+ *
+ * <p>Validation is <strong>content-authoritative</strong>: the bytes decide whether an upload is a
+ * supported image, and the stored extension is derived from those bytes. The filename and the
+ * client-declared content type are advisory only — they are frequently wrong or absent in the real
+ * world (mobile galleries and clipboard paste often send no extension, and some sources declare
+ * {@code application/octet-stream}), and rejecting on them turns away perfectly good photos.
+ * Non-images are still refused, because magic-byte sniffing is the gate.
  */
 @Slf4j
 @Service
@@ -31,9 +39,27 @@ import java.util.UUID;
 public class ImageStorageService {
 
     private static final long MAX_BYTES = 8L * 1024 * 1024;
-    private static final Set<String> ALLOWED_CONTENT_TYPES =
-            Set.of("image/jpeg", "image/png", "image/webp");
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
+
+    /** Canonical PNG signature: 89 50 4E 47 0D 0A 1A 0A */
+    private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    /** JPEG start-of-image marker plus a following marker byte: FF D8 FF. */
+    private static final byte[] JPEG_SIGNATURE = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+    /** The PNG spec requires IHDR to be the first chunk, so this confirms real structure. */
+    private static final byte[] PNG_FIRST_CHUNK = {'I', 'H', 'D', 'R'};
+    /** IHDR follows the 8-byte signature and the 4-byte chunk length: 8 + 4 = 12. */
+    private static final int PNG_FIRST_CHUNK_OFFSET = PNG_SIGNATURE.length + 4;
+
+    /** Bytes needed to identify the longest signature we check (PNG signature + IHDR). */
+    private static final int SNIFF_BYTES = 16;
+
+    /** Extension assigned per detected type — derived from content, never from the client. */
+    private static final Map<String, String> EXTENSION_BY_TYPE = Map.of(
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/webp", "webp");
+
+    /** Only used to note conventional metadata in a debug line; it never decides an upload. */
+    private static final Set<String> CONVENTIONAL_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final AppProperties properties;
 
@@ -45,62 +71,41 @@ public class ImageStorageService {
      * client-declared filename and content type are only advisory.
      */
     public String detectImageType(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new BadRequestException("No image file was provided");
-        }
-        if (file.getSize() > MAX_BYTES) {
-            throw new BadRequestException("Image exceeds the maximum size of 8MB");
-        }
+        requireUsableUpload(file);
+        String detected;
         try (InputStream in = file.getInputStream()) {
-            String sniffed = sniffMimeType(in);
-            if (sniffed == null || !ALLOWED_CONTENT_TYPES.contains(sniffed)) {
-                throw new BadRequestException("Only JPG, PNG, or WEBP images are supported");
-            }
-            return sniffed;
+            detected = sniffMimeType(in);
         } catch (IOException e) {
             throw new BadRequestException("Could not read the uploaded file");
         }
+        if (detected == null) {
+            throw unsupportedImage();
+        }
+        return detected;
     }
 
     /**
      * Validates and stores an uploaded image, returning its storage key and public URL.
-     * Validation covers extension, declared MIME type, size, and magic bytes.
+     * Size, content, and path safety are enforced; the stored extension comes from the detected
+     * content, so a client cannot influence how the file is served.
      */
     public StoredImage store(MultipartFile file, String subdir) {
-        if (file == null || file.isEmpty()) {
-            throw new BadRequestException("No image file was provided");
-        }
-        if (file.getSize() > MAX_BYTES) {
-            throw new BadRequestException("Image exceeds the maximum size of 8MB");
-        }
+        requireUsableUpload(file);
+        String detected = detectImageType(file);
+        String extension = EXTENSION_BY_TYPE.get(detected);
 
-        String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
-        String extension = extensionOf(original);
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            throw new BadRequestException("Only JPG, PNG, or WEBP images are supported");
-        }
-        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
-        if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new BadRequestException("Unsupported image content type");
-        }
-
-        try (InputStream in = file.getInputStream()) {
-            String sniffed = sniffMimeType(in);
-            if (sniffed == null || !ALLOWED_CONTENT_TYPES.contains(sniffed)) {
-                throw new BadRequestException("File content does not look like a valid image");
-            }
-            if (!sniffed.equals(contentType) && !(sniffed.equals("image/jpeg") && contentType.equals("image/jpg"))) {
-                throw new BadRequestException("Declared content type does not match file content");
-            }
-        } catch (IOException e) {
-            throw new BadRequestException("Could not read the uploaded file");
+        String declaredName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        String declaredType = (file.getContentType() == null ? "" : file.getContentType()).toLowerCase(Locale.ROOT);
+        if (!declaredType.equals(detected) || !CONVENTIONAL_EXTENSIONS.contains(extensionOf(declaredName))) {
+            log.debug("Upload metadata disagrees with content: declared name='{}', declared type='{}', detected='{}'",
+                    declaredName, declaredType, detected);
         }
 
         String key = "%s/%s/%s.%s".formatted(
                 subdir,
                 LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM")),
                 UUID.randomUUID(),
-                extension.equals("jpeg") ? "jpg" : extension);
+                extension);
 
         String type = properties.storage() != null ? properties.storage().type() : "local";
         if (!"local".equals(type)) {
@@ -129,32 +134,78 @@ public class ImageStorageService {
         }
     }
 
+    private void requireUsableUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("No image file was provided");
+        }
+        if (file.getSize() > MAX_BYTES) {
+            throw new BadRequestException("Image exceeds the maximum size of 8MB");
+        }
+    }
+
+    private BadRequestException unsupportedImage() {
+        return new BadRequestException(
+                "This file is not a JPG, PNG, or WEBP image. Upload a photo of the item instead.");
+    }
+
     private String extensionOf(String filename) {
         int dot = filename.lastIndexOf('.');
         if (dot < 0 || dot == filename.length() - 1) {
             return "";
         }
-        return filename.substring(dot + 1).toLowerCase();
+        return filename.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
-    /** Reads the first bytes and identifies JPEG/PNG/WEBP by magic number. */
+    /**
+     * Identifies JPEG/PNG/WEBP by their leading bytes, returning {@code null} when the content is
+     * none of them.
+     *
+     * <ul>
+     *   <li>PNG — {@code 89 50 4E 47 0D 0A 1A 0A}, then the mandatory first {@code IHDR} chunk at offset 12</li>
+     *   <li>JPEG — {@code FF D8 FF}</li>
+     *   <li>WEBP — {@code RIFF} at offset 0 and {@code WEBP} at offset 8</li>
+     * </ul>
+     */
     private String sniffMimeType(InputStream in) throws IOException {
-        byte[] header = new byte[12];
-        int read = in.readNBytes(header, 0, header.length);
-        if (read < 4) {
-            return null;
-        }
-        if ((header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF) {
-            return "image/jpeg";
-        }
-        if ((header[0] & 0xFF) == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) {
+        byte[] header = in.readNBytes(SNIFF_BYTES);
+        if (startsWith(header, 0, PNG_SIGNATURE) && startsWith(header, PNG_FIRST_CHUNK_OFFSET, PNG_FIRST_CHUNK)) {
             return "image/png";
         }
-        if (header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
-                && read >= 12 && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') {
+        if (startsWith(header, 0, JPEG_SIGNATURE)) {
+            return "image/jpeg";
+        }
+        if (startsWith(header, 0, "RIFF") && startsWith(header, 8, "WEBP")) {
             return "image/webp";
         }
         return null;
+    }
+
+    private static boolean startsWith(byte[] data, byte[] prefix) {
+        return startsWith(data, 0, prefix);
+    }
+
+    private static boolean startsWith(byte[] data, int offset, byte[] prefix) {
+        if (data.length < offset + prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (data[offset + i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean startsWith(byte[] data, int offset, String ascii) {
+        if (data.length < offset + ascii.length()) {
+            return false;
+        }
+        for (int i = 0; i < ascii.length(); i++) {
+            if ((data[offset + i] & 0xFF) != ascii.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Placeholder for future provider metadata (kept explicit to avoid silent behavior). */
