@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <rect width="24" height="24" rx="5.5" fill="#15402e" />
+  <g
+    transform="translate(12 12) scale(0.74) translate(-12 -12)"
+    fill="none"
+    stroke="#e4f2e8"
+    stroke-width="2.1"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <g transform="rotate(0 12 12)">
+      <path d="M12 5 A7 7 0 0 1 18.06 15.5" />
+      <path d="M16.67 14.7 L19.45 16.3 L16.96 17.4" />
+    </g>
+    <g transform="rotate(120 12 12)">
+      <path d="M12 5 A7 7 0 0 1 18.06 15.5" />
+      <path d="M16.67 14.7 L19.45 16.3 L16.96 17.4" />
+    </g>
+    <g transform="rotate(240 12 12)">
+      <path d="M12 5 A7 7 0 0 1 18.06 15.5" />
+      <path d="M16.67 14.7 L19.45 16.3 L16.96 17.4" />
+    </g>
+  </g>
+</svg>

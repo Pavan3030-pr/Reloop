@@ -1,12 +1,15 @@
 import { Link } from 'react-router-dom';
-import { Icon } from './icons';
+import { ReLoopMark } from './ReLoopMark';
 
-/** The ReLoop wordmark. Used in the marketing nav, app bar and auth screens. */
+/**
+ * The ReLoop lockup: the recycling mark plus the wordmark. Used in the marketing nav, the app bar,
+ * the auth screens and the footer, so the identity stays identical everywhere.
+ */
 export function Brand({ to = '/', tag = true, className = '' }: { to?: string; tag?: boolean; className?: string }) {
   return (
     <Link to={to} className={`brand ${className}`.trim()} aria-label="ReLoop home">
       <span className="brand-mark" aria-hidden="true">
-        <Icon name="recycle" size={19} strokeWidth={1.7} />
+        <ReLoopMark size={20} />
       </span>
       <span>
         <span className="brand-name">ReLoop</span>

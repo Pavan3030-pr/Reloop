@@ -33,7 +33,9 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 - **Backend:** Spring Boot 3.5.6, Java 21, Spring Web/Security/Data JPA/Validation/Actuator,
   Flyway, PostgreSQL, JJWT, springdoc-openapi, Lombok.
 - **Frontend:** React 19, TypeScript, Vite 7, React Router 7. No UI kit — a purpose-built CSS design
-  system (`frontend/src/styles.css`).
+  system (`frontend/src/styles.css`). Leaflet + OpenStreetMap tiles are used for the
+  collection-point map and are lazy-loaded into their own chunk, so the entry bundle stays clean.
+  The ♻ brand mark is inline SVG (`components/ReLoopMark.tsx`) and doubles as the favicon.
 - **AI:** Google Gemini (`generateContent`) for waste classification, called **only** from the
   backend. The API key never reaches the browser.
 

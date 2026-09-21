@@ -1,7 +1,13 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, Field, Loading, Note, PageHead, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
+
+// Leaflet and the OpenStreetMap layer are only needed on this page, so they are split into their
+// own chunk instead of being shipped in the entry bundle that every visitor downloads.
+const CollectionMap = lazy(() =>
+  import('../components/CollectionMap').then((module) => ({ default: module.CollectionMap })),
+);
 import { api, ApiError } from '../lib/api';
 import { getBrowserLocation, type Coordinates } from '../lib/geo';
 
@@ -62,39 +68,6 @@ export function CollectionPoints() {
 
   const results = points.data ?? [];
   const mapped = results.filter((point) => point.latitude !== null && point.longitude !== null);
-
-  /**
-   * Plots real coordinates on a bounded panel — no external map service, so the
-   * page stays fast and every pin is a record you can open.
-   */
-  const plot = useMemo(() => {
-    const latList = [...mapped.map((point) => point.latitude as number)];
-    const lngList = [...mapped.map((point) => point.longitude as number)];
-    if (coords) {
-      latList.push(coords.lat);
-      lngList.push(coords.lng);
-    }
-    if (latList.length === 0) return null;
-
-    const minLat = Math.min(...latList);
-    const maxLat = Math.max(...latList);
-    const minLng = Math.min(...lngList);
-    const maxLng = Math.max(...lngList);
-    const latPad = Math.max((maxLat - minLat) * 0.18, 0.004);
-    const lngPad = Math.max((maxLng - minLng) * 0.18, 0.004);
-
-    return { minLat: minLat - latPad, maxLat: maxLat + latPad, minLng: minLng - lngPad, maxLng: maxLng + lngPad };
-  }, [mapped, coords]);
-
-  const positionOf = (lat: number, lng: number) => {
-    if (!plot) return { left: '50%', top: '50%' };
-    const spanLat = plot.maxLat - plot.minLat || 1;
-    const spanLng = plot.maxLng - plot.minLng || 1;
-    const left = ((lng - plot.minLng) / spanLng) * 100;
-    const top = 100 - ((lat - plot.minLat) / spanLat) * 100;
-    const clamp = (value: number) => Math.min(94, Math.max(6, value));
-    return { left: `${clamp(left)}%`, top: `${clamp(top)}%` };
-  };
 
   const hasFilters = Boolean(applied.city || applied.material || applied.q || applied.lat);
 
@@ -188,34 +161,30 @@ export function CollectionPoints() {
       ) : (
         <div className="grid cols-2" style={{ marginTop: 18, alignItems: 'start' }}>
           <div>
-            <div className="map-panel" role="img" aria-label="Map of matching collection points">
-              {mapped.length === 0 ? (
-                <div className="map-legend">These records have no coordinates on file.</div>
-              ) : null}
-              {mapped.map((point) => {
-                const selected = selectedId === point.id;
-                return (
-                  <button
-                    type="button"
-                    key={point.id}
-                    className="map-pin"
-                    style={positionOf(point.latitude as number, point.longitude as number)}
-                    onClick={() => setSelectedId(point.id)}
-                    aria-label={`${point.name}, ${point.city}`}
-                  >
-                    <span
-                      className="pin-dot"
-                      style={selected ? { background: 'var(--forest-3)', transform: 'rotate(-45deg) scale(1.12)' } : undefined}
-                      aria-hidden="true"
-                    >
-                      <Icon name="recycle" size={13} />
-                    </span>
-                    {mapped.length <= 8 || selected ? <span className="pin-label">{point.name}</span> : null}
-                  </button>
-                );
-              })}
-              {coords && plot ? <span className="map-me" style={positionOf(coords.lat, coords.lng)} title="Your location" /> : null}
-              <span className="map-legend">
+            {mapped.length === 0 ? (
+              <EmptyState icon={<Icon name="pin" size={20} />} title="These records have no coordinates on file">
+                A collection point appears on the map once a position is recorded for it.
+              </EmptyState>
+            ) : (
+              <Suspense fallback={<Loading label="Loading map…" />}>
+                <CollectionMap
+                  points={mapped}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  user={coords}
+                />
+              </Suspense>
+            )}
+            <div className="map-key">
+              <span className="key-item">
+                <span className="key-pin verified" aria-hidden="true" />
+                Verified by an administrator
+              </span>
+              <span className="key-item">
+                <span className="key-pin unverified" aria-hidden="true" />
+                Unverified record
+              </span>
+              <span className="key-item muted">
                 {mapped.length} of {results.length} records plotted · real coordinates
               </span>
             </div>

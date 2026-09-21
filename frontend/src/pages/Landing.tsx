@@ -3,6 +3,7 @@ import { Icon, type IconName } from '../components/icons';
 import { MarketingShell } from '../components/MarketingShell';
 import { useRevealOnScroll } from '../hooks/useReveal';
 import { PICKUP_STAGES } from '../lib/format';
+import { ReLoopMark } from '../components/ReLoopMark';
 
 const PROBLEMS = [
   'What is this material, really?',
@@ -99,7 +100,7 @@ export function Landing() {
             <div className="loop-card">
               <div className="loop-head">
                 <span className="icon-tile" aria-hidden="true">
-                  <Icon name="recycle" size={18} />
+                  <ReLoopMark size={19} className="recycle-turn" />
                 </span>
                 <span className="title">The ReLoop loop</span>
                 <span className="spacer" />

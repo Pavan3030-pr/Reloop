@@ -2291,6 +2291,135 @@ select {
 
 /* ------------------------------------------------------------- motion */
 
+/* ------------------------------------------------------------------- map */
+
+.map-shell {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-2, #f4f6f2);
+}
+.map-canvas {
+  width: 100%;
+  z-index: 0; /* keep Leaflet panes below the app's sticky nav and menus */
+}
+.map-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.map-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.map-key .key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.map-key .key-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.map-key .key-pin.verified {
+  background: var(--forest);
+  box-shadow: 0 0 0 2px var(--leaf-2);
+}
+.map-key .key-pin.unverified {
+  background: var(--surface);
+  border: 1.5px dashed var(--muted);
+}
+
+/* Leaflet replaces its default marker imagery with these inline pins. */
+.reloop-pin-wrap {
+  background: none;
+  border: 0;
+}
+.reloop-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: #fff;
+  transition: transform 0.18s var(--ease);
+}
+.reloop-pin .pin-glyph,
+.reloop-pin .pin-glyph svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+.reloop-pin.verified {
+  background: var(--forest);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(21, 64, 46, 0.35);
+}
+.reloop-pin.unverified {
+  background: var(--surface);
+  color: var(--muted);
+  border: 2px dashed var(--muted);
+}
+.reloop-pin.selected {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 4px var(--leaf-2);
+}
+.reloop-me {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #2f6fd0;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 4px rgba(47, 111, 208, 0.22);
+}
+.map-popup .mp-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.map-popup .mp-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+  max-width: 240px;
+}
+.map-popup .mp-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin: 4px 0;
+}
+.map-popup .mp-badge.ok {
+  background: var(--leaf-2);
+  color: var(--forest);
+}
+.map-popup .mp-badge.plain {
+  background: #eceae4;
+  color: var(--muted);
+}
+.map-popup .mp-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--forest);
+}
+.leaflet-container {
+  font: inherit;
+}
+
 [data-reveal] {
   opacity: 0;
   transform: translateY(18px);
@@ -2300,6 +2429,92 @@ select {
 [data-reveal].is-in {
   opacity: 1;
   transform: none;
+}
+
+/* Children of a revealed block enter one after another, so a section reads as a sequence
+   instead of arriving as a single slab. */
+[data-reveal] .step,
+[data-reveal] .journey-node,
+[data-reveal] .metric,
+[data-reveal] .problem-list li,
+[data-reveal] .track > li {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.55s var(--ease), transform 0.55s var(--ease);
+}
+[data-reveal].is-in .step,
+[data-reveal].is-in .journey-node,
+[data-reveal].is-in .metric,
+[data-reveal].is-in .problem-list li,
+[data-reveal].is-in .track > li {
+  opacity: 1;
+  transform: none;
+}
+[data-reveal].is-in .step:nth-child(1),
+[data-reveal].is-in .journey-node:nth-child(1),
+[data-reveal].is-in .metric:nth-child(1),
+[data-reveal].is-in .problem-list li:nth-child(1),
+[data-reveal].is-in .track > li:nth-child(1) {
+  transition-delay: 0.06s;
+}
+[data-reveal].is-in .step:nth-child(2),
+[data-reveal].is-in .journey-node:nth-child(2),
+[data-reveal].is-in .metric:nth-child(2),
+[data-reveal].is-in .problem-list li:nth-child(2),
+[data-reveal].is-in .track > li:nth-child(2) {
+  transition-delay: 0.16s;
+}
+[data-reveal].is-in .step:nth-child(3),
+[data-reveal].is-in .journey-node:nth-child(3),
+[data-reveal].is-in .metric:nth-child(3),
+[data-reveal].is-in .problem-list li:nth-child(3),
+[data-reveal].is-in .track > li:nth-child(3) {
+  transition-delay: 0.26s;
+}
+[data-reveal].is-in .step:nth-child(4),
+[data-reveal].is-in .journey-node:nth-child(4),
+[data-reveal].is-in .metric:nth-child(4),
+[data-reveal].is-in .problem-list li:nth-child(4),
+[data-reveal].is-in .track > li:nth-child(4) {
+  transition-delay: 0.36s;
+}
+[data-reveal].is-in .journey-node:nth-child(5),
+[data-reveal].is-in .track > li:nth-child(5) {
+  transition-delay: 0.46s;
+}
+[data-reveal].is-in .journey-node:nth-child(6),
+[data-reveal].is-in .track > li:nth-child(6) {
+  transition-delay: 0.56s;
+}
+
+/* The hero's loop diagram animates on load, in step order, mirroring the traveller dot. */
+.loop-rows .loop-row {
+  animation: rise 0.6s var(--ease) both;
+}
+.loop-rows .loop-row:nth-of-type(1) {
+  animation-delay: 0.18s;
+}
+.loop-rows .loop-row:nth-of-type(2) {
+  animation-delay: 0.34s;
+}
+.loop-rows .loop-row:nth-of-type(3) {
+  animation-delay: 0.5s;
+}
+.loop-rows .loop-row:nth-of-type(4) {
+  animation-delay: 0.66s;
+}
+
+/* The recycling mark turns slowly wherever it is the subject — circularity, made literal.
+   Slow enough to read as ambient rather than as a loading spinner. */
+.recycle-turn {
+  animation: recycle-turn 14s linear infinite;
+  transform-origin: 50% 50%;
+  color: var(--forest);
+}
+@keyframes recycle-turn {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2320,6 +2535,17 @@ select {
   .loop-dot,
   .scan-sweep {
     display: none;
+  }
+  /* Motion is switched off wholesale above; make sure nothing is left mid-transition at opacity 0. */
+  [data-reveal] .step,
+  [data-reveal] .journey-node,
+  [data-reveal] .metric,
+  [data-reveal] .problem-list li,
+  [data-reveal] .track > li,
+  .loop-rows .loop-row {
+    opacity: 1;
+    transform: none;
+    animation: none;
   }
 }
 
