@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, Field, Loading, Note, PageHead, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
@@ -30,6 +30,7 @@ export function CollectionPoints() {
   const [locating, setLocating] = useState(false);
   const [applied, setApplied] = useState<Applied>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const mapPanel = useRef<HTMLDivElement | null>(null);
 
   const points = useAsync(
     () => api.collectionPoints(applied),
@@ -68,6 +69,15 @@ export function CollectionPoints() {
 
   const results = points.data ?? [];
   const mapped = results.filter((point) => point.latitude !== null && point.longitude !== null);
+
+  /**
+   * The directory is a map and a list of the same records, so a selection has to be visible in both:
+   * the map flies to the pin and the panel is brought back into view for small screens.
+   */
+  const showOnMap = (id: string) => {
+    setSelectedId(id);
+    mapPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
 
   const hasFilters = Boolean(applied.city || applied.material || applied.q || applied.lat);
 
@@ -160,7 +170,7 @@ export function CollectionPoints() {
         </div>
       ) : (
         <div className="grid cols-2" style={{ marginTop: 18, alignItems: 'start' }}>
-          <div>
+          <div ref={mapPanel}>
             {mapped.length === 0 ? (
               <EmptyState icon={<Icon name="pin" size={20} />} title="These records have no coordinates on file">
                 A collection point appears on the map once a position is recorded for it.
@@ -254,6 +264,12 @@ export function CollectionPoints() {
                 </div>
 
                 <div className="btn-row" style={{ marginTop: 16 }}>
+                  {point.latitude !== null && point.longitude !== null ? (
+                    <Button type="button" className="ghost small" onClick={() => showOnMap(point.id)}>
+                      <Icon name="pin" size={15} />
+                      Show on map
+                    </Button>
+                  ) : null}
                   {point.latitude !== null && point.longitude !== null ? (
                     <a
                       className="btn secondary small"

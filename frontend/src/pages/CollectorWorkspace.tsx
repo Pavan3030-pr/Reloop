@@ -1,19 +1,54 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, Stat, StatusPill, useAsync } from '../components/ui';
+import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
-import { dateOnly, kg, relativeTime, stageLabel, stageProgress, toLocalDateTimeInput } from '../lib/format';
-import type { Pickup, PickupSummary } from '../lib/types';
+import { dateOnly, kg, relativeTime, stageProgress, toLocalDateTimeInput } from '../lib/format';
+import { getBrowserLocation, type Coordinates } from '../lib/geo';
+import type { Pickup, PickupSummary, TimeSlot } from '../lib/types';
+
+/** Visit windows run earliest to latest, so jobs can be worked in the order they are promised. */
+const SLOT_ORDER: Record<TimeSlot, number> = { MORNING: 0, AFTERNOON: 1, EVENING: 2 };
+
+/** A job is finished once it has left the operational pipeline. */
+const TERMINAL: string[] = ['RECOVERED', 'RECYCLED', 'CANCELLED'];
+
+function localToday(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function byVisitOrder(a: Pickup, b: Pickup): number {
+  if (a.pickupDate !== b.pickupDate) return a.pickupDate < b.pickupDate ? -1 : 1;
+  return (SLOT_ORDER[a.timeSlot] ?? 99) - (SLOT_ORDER[b.timeSlot] ?? 99);
+}
+
+/** What this collector has to do next, stated in the workspace rather than implied by a button. */
+function nextAction(status: string): string | null {
+  switch (status) {
+    case 'ACCEPTED':
+      return 'Next: schedule the visit, then record the weight on site.';
+    case 'SCHEDULED':
+      return 'Next: record the weight when you load the material.';
+    case 'PICKED_UP':
+      return 'Next: move it to processing once it reaches your facility.';
+    case 'PROCESSING':
+      return 'Next: close the loop by marking the material recovered or recycled.';
+    default:
+      return null;
+  }
+}
 
 export function CollectorWorkspace() {
   const dashboard = useAsync(() => api.collectorDashboard(), []);
-  const [scope, setScope] = useState<'available' | 'mine'>('available');
-  // The open pool comes back redacted (no address, no contact, no photo until assignment).
-  const available = useAsync(() => api.availablePickups({ size: 50 }), []);
+  const partner = useAsync(() => api.myCollectorApplication(), []);
+  // Reading the pool with coordinates adds the coarse distance and lets the list sort nearest-first.
+  const [coords, setCoords] = useState<Coordinates | null>(null);
+  const available = useAsync(() => api.availablePickups({ lat: coords?.lat, lng: coords?.lng, size: 50 }), [coords]);
   const mine = useAsync(() => api.myPickups(0, 50), []);
-  const jobs = scope === 'available' ? available : mine;
 
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
@@ -44,15 +79,36 @@ export function CollectorWorkspace() {
     }
   };
 
+  /**
+   * Distance is only meaningful against a real position, so it is requested explicitly and the
+   * pool is re-read with the coordinates. Declining just leaves the pool sorted by recency.
+   */
+  const sortByDistance = async () => {
+    setLocating(true);
+    setError(null);
+    try {
+      const position = await getBrowserLocation();
+      if (!position) {
+        setError('Location permission was declined. The list stays sorted by most recent request.');
+        return;
+      }
+      setCoords(position);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not read your location.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
   if (dashboard.loading) return <Loading label="Loading collector workspace…" />;
 
-  if (dashboard.error && (!jobs.data || jobs.error)) {
+  if (dashboard.error) {
     return (
       <Note tone="warning">
         <div>
           <strong>Collector actions need an approved application.</strong>
           <div className="small" style={{ marginTop: 4 }}>
-            {dashboard.error ?? jobs.error} <Link to="/profile">Check your application status →</Link>
+            {dashboard.error} <Link to="/profile">Check your application status →</Link>
           </div>
         </div>
       </Note>
@@ -60,6 +116,24 @@ export function CollectorWorkspace() {
   }
 
   const stats = dashboard.data;
+  const jobs = mine.data?.content ?? [];
+  const today = localToday();
+
+  const open = jobs.filter((job) => !TERMINAL.includes(job.status));
+  const dueToday = open.filter((job) => job.pickupDate === today).sort(byVisitOrder);
+  const upcoming = open.filter((job) => job.pickupDate !== today).sort(byVisitOrder);
+  const completed = jobs
+    .filter((job) => TERMINAL.includes(job.status))
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+
+  const pool = [...(available.data?.content ?? [])].sort((a, b) => {
+    if (coords) {
+      const left = a.approximateDistanceKm ?? Number.POSITIVE_INFINITY;
+      const right = b.approximateDistanceKm ?? Number.POSITIVE_INFINITY;
+      if (left !== right) return left - right;
+    }
+    return a.createdAt < b.createdAt ? 1 : -1;
+  });
 
   /** Card for a request in the open pool: material, city and a coarse distance only. */
   const renderAvailable = (summary: PickupSummary) => {
@@ -128,6 +202,7 @@ export function CollectorWorkspace() {
   const renderJob = (pickup: Pickup) => {
     const busy = busyCode === pickup.code;
     const active = ['ACCEPTED', 'SCHEDULED', 'PICKED_UP', 'PROCESSING'].includes(pickup.status);
+    const hint = nextAction(pickup.status);
 
     return (
       <Card key={pickup.code} className="lift">
@@ -194,91 +269,93 @@ export function CollectorWorkspace() {
             <div className="bar" aria-hidden="true">
               <span style={{ width: `${stageProgress(pickup.status)}%` }} />
             </div>
-            <div className="small muted" style={{ marginTop: 8 }}>
-              {stageLabel(pickup.status)}
-            </div>
+            {hint ? (
+              <div className="small" style={{ marginTop: 8, color: 'var(--success)' }}>
+                <Icon name="info" size={13} /> {hint}
+              </div>
+            ) : null}
           </>
         ) : null}
 
         <div className="btn-row" style={{ marginTop: 16 }}>
-              {pickup.status === 'ACCEPTED' ? (
-                <Button
-                  type="button"
-                  className="secondary small"
-                  disabled={busy}
-                  onClick={() => {
-                    setScheduling(pickup);
-                    setScheduledAt(toLocalDateTimeInput(new Date(Date.now() + 3600_000)));
-                  }}
-                >
-                  <Icon name="calendar" size={15} />
-                  Schedule
-                </Button>
-              ) : null}
-              {pickup.status === 'ACCEPTED' || pickup.status === 'SCHEDULED' ? (
-                <Button
-                  type="button"
-                  className="small"
-                  disabled={busy}
-                  onClick={() => {
-                    setCollecting(pickup);
-                    setActualQuantityKg(String(pickup.estimatedQuantityKg));
-                    setCollectNotes('');
-                  }}
-                >
-                  <Icon name="scale" size={15} />
-                  Record collection
-                </Button>
-              ) : null}
-              {pickup.status === 'PICKED_UP' ? (
-                <Button
-                  type="button"
-                  className="secondary small"
-                  disabled={busy}
-                  onClick={() =>
-                    run(pickup.code, () => api.updatePickupStatus(pickup.code, 'PROCESSING'), `${pickup.code} moved to processing.`)
-                  }
-                >
-                  <Icon name="factory" size={15} />
-                  Move to processing
-                </Button>
-              ) : null}
-              {pickup.status === 'PROCESSING' ? (
-                <>
-                  <Button
-                    type="button"
-                    className="small"
-                    disabled={busy}
-                    onClick={() =>
-                      run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECOVERED'), `${pickup.code} marked recovered.`)
-                    }
-                  >
-                    <Icon name="archive" size={15} />
-                    Mark recovered
-                  </Button>
-                  <Button
-                    type="button"
-                    className="secondary small"
-                    disabled={busy}
-                    onClick={() =>
-                      run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECYCLED'), `${pickup.code} marked recycled.`)
-                    }
-                  >
-                    <Icon name="recycle" size={15} />
-                    Mark recycled
-                  </Button>
-                </>
-              ) : null}
-              {pickup.status === 'ACCEPTED' || pickup.status === 'SCHEDULED' ? (
-                <Button
-                  type="button"
-                  className="ghost small"
-                  disabled={busy}
-                  onClick={() => run(pickup.code, () => api.releasePickup(pickup.code), `${pickup.code} released back to the pool.`)}
-                >
-                  Release
-                </Button>
-              ) : null}
+          {pickup.status === 'ACCEPTED' ? (
+            <Button
+              type="button"
+              className="secondary small"
+              disabled={busy}
+              onClick={() => {
+                setScheduling(pickup);
+                setScheduledAt(toLocalDateTimeInput(new Date(Date.now() + 3600_000)));
+              }}
+            >
+              <Icon name="calendar" size={15} />
+              Schedule
+            </Button>
+          ) : null}
+          {pickup.status === 'ACCEPTED' || pickup.status === 'SCHEDULED' ? (
+            <Button
+              type="button"
+              className="small"
+              disabled={busy}
+              onClick={() => {
+                setCollecting(pickup);
+                setActualQuantityKg(String(pickup.estimatedQuantityKg));
+                setCollectNotes('');
+              }}
+            >
+              <Icon name="scale" size={15} />
+              Record collection
+            </Button>
+          ) : null}
+          {pickup.status === 'PICKED_UP' ? (
+            <Button
+              type="button"
+              className="secondary small"
+              disabled={busy}
+              onClick={() =>
+                run(pickup.code, () => api.updatePickupStatus(pickup.code, 'PROCESSING'), `${pickup.code} moved to processing.`)
+              }
+            >
+              <Icon name="factory" size={15} />
+              Move to processing
+            </Button>
+          ) : null}
+          {pickup.status === 'PROCESSING' ? (
+            <>
+              <Button
+                type="button"
+                className="small"
+                disabled={busy}
+                onClick={() => run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECOVERED'), `${pickup.code} marked recovered.`)}
+              >
+                <Icon name="archive" size={15} />
+                Mark recovered
+              </Button>
+              <Button
+                type="button"
+                className="secondary small"
+                disabled={busy}
+                onClick={() => run(pickup.code, () => api.updatePickupStatus(pickup.code, 'RECYCLED'), `${pickup.code} marked recycled.`)}
+              >
+                <Icon name="recycle" size={15} />
+                Mark recycled
+              </Button>
+            </>
+          ) : null}
+          {pickup.status === 'ACCEPTED' || pickup.status === 'SCHEDULED' ? (
+            <Button
+              type="button"
+              className="ghost small"
+              disabled={busy}
+              onClick={() => {
+                // Releasing hands the job back to the pool, so it is confirmed rather than one-click.
+                if (!window.confirm(`Release ${pickup.code} back to the open pool? The resident keeps their request.`)) return;
+                run(pickup.code, () => api.releasePickup(pickup.code), `${pickup.code} released back to the pool.`);
+              }}
+            >
+              Release
+            </Button>
+          ) : null}
         </div>
 
         {scheduling?.code === pickup.code ? (
@@ -362,82 +439,150 @@ export function CollectorWorkspace() {
     );
   };
 
+  const section = (key: string, title: string, count: number, hint: string, body: ReactNode, empty: ReactNode) => (
+    <section className="work-section" key={key}>
+      <div className="work-head">
+        <h2>{title}</h2>
+        <span className={`pill ${count > 0 ? 'green' : 'grey'}`}>{count}</span>
+        <span className="muted small">{hint}</span>
+      </div>
+      {count === 0 ? empty : body}
+    </section>
+  );
+
   return (
     <>
       <PageHead
         eyebrow="Collector"
         title="Collector workspace"
-        lede="Accept jobs in the materials you handle, schedule the visit, weigh the material on site and take it through to recovery."
+        lede="Work the queue in the order it was promised: today's visits first, then the jobs already assigned to you, then requests still waiting for a collector."
         actions={
-          <Button type="button" className="secondary" onClick={refresh}>
-            <Icon name="refresh" size={16} />
-            Refresh
-          </Button>
+          <>
+            <Button type="button" className="secondary" onClick={sortByDistance} disabled={locating}>
+              <Icon name="route" size={16} />
+              {locating ? 'Locating…' : coords ? 'Nearest first' : 'Sort by distance'}
+            </Button>
+            <Button type="button" className="ghost" onClick={refresh}>
+              <Icon name="refresh" size={16} />
+              Refresh
+            </Button>
+          </>
         }
       />
 
-      <div className="grid cols-3" style={{ marginBottom: 18 }}>
-        <Stat label="Available requests" value={stats?.availableRequests ?? 0} accent icon="truck" hint="Waiting for a collector" />
-        <Stat label="Active jobs" value={stats?.activeJobs ?? 0} icon="box" hint="Accepted, scheduled or in processing" />
-        <Stat
-          label="Completed"
-          value={stats?.completedJobs ?? 0}
-          icon="checkCircle"
-          hint={`${stats?.totalCollections ?? 0} recorded collections`}
-        />
-      </div>
-      <div className="grid cols-3" style={{ marginBottom: 20 }}>
-        <Stat label="Jobs touched today" value={stats?.todayPickups ?? 0} icon="calendar" hint="Across every status" />
-        <Stat label="Weight collected" value={kg(stats?.totalKgCollected ?? 0)} icon="scale" hint="Actual weighed weight" />
-        <Stat label="Organisation" value="Verified" icon="shield" hint="Approved by an administrator" />
+      <div className="collector-strip">
+        <div className="grow">
+          <div className="list-title">
+            {partner.data?.organizationName ?? 'Your organisation'}
+            {partner.data ? (
+              <span className={`pill ${partner.data.status === 'VERIFIED' ? 'green' : partner.data.status === 'REJECTED' ? 'red' : 'amber'}`}>
+                {partner.data.status.toLowerCase()}
+              </span>
+            ) : (
+              <span className="pill grey">no application on file</span>
+            )}
+          </div>
+          <div className="list-meta">
+            {partner.data
+              ? `Materials: ${partner.data.materialCodes.join(', ') || '—'} · ${partner.data.city}`
+              : 'Apply as a collector from your profile to receive pickup requests.'}
+          </div>
+        </div>
+        <dl className="collector-figures">
+          <div>
+            <dt>Open requests</dt>
+            <dd className="mono">{stats?.availableRequests ?? 0}</dd>
+          </div>
+          <div>
+            <dt>Active jobs</dt>
+            <dd className="mono">{stats?.activeJobs ?? 0}</dd>
+          </div>
+          <div>
+            <dt>Collected</dt>
+            <dd className="mono">{kg(stats?.totalKgCollected ?? 0)}</dd>
+          </div>
+          <div>
+            <dt>Collections recorded</dt>
+            <dd className="mono">{stats?.totalCollections ?? 0}</dd>
+          </div>
+        </dl>
       </div>
 
       {error ? <Note tone="error">{error}</Note> : null}
       {message ? <Note tone="success">{message}</Note> : null}
 
-      <div className="tabs" role="tablist" aria-label="Job scope">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={scope === 'available'}
-          className={`tab${scope === 'available' ? ' active' : ''}`}
-          onClick={() => setScope('available')}
-        >
-          Available jobs
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={scope === 'mine'}
-          className={`tab${scope === 'mine' ? ' active' : ''}`}
-          onClick={() => setScope('mine')}
-        >
-          My jobs
-        </button>
-      </div>
+      {mine.error ? <Note tone="error">{mine.error}</Note> : null}
 
-      {jobs.error ? <Note tone="error">{jobs.error}</Note> : null}
-      {jobs.loading ? (
-        <Loading label="Loading jobs…" />
-      ) : scope === 'available' ? (
-        (available.data?.content.length ?? 0) === 0 ? (
+      {mine.loading ? (
+        <Loading label="Loading your jobs…" />
+      ) : (
+        <>
+          {section(
+            'today',
+            'Today',
+            dueToday.length,
+            `Visits promised for ${dateOnly(today)}`,
+            <div className="grid cols-2" style={{ alignItems: 'start' }}>
+              {dueToday.map(renderJob)}
+            </div>,
+            <EmptyState icon={<Icon name="calendar" size={20} />} title="Nothing scheduled for today">
+              Jobs you accept with a visit date of today appear here first.
+            </EmptyState>,
+          )}
+
+          {section(
+            'active',
+            'Active jobs',
+            upcoming.length,
+            'Assigned to you and still in the pipeline',
+            <div className="grid cols-2" style={{ alignItems: 'start' }}>
+              {upcoming.map(renderJob)}
+            </div>,
+            <EmptyState icon={<Icon name="box" size={20} />} title="No other jobs in progress">
+              Everything else you have accepted has been closed out.
+            </EmptyState>,
+          )}
+        </>
+      )}
+
+      <section className="work-section">
+        <div className="work-head">
+          <h2>New requests</h2>
+          <span className={`pill ${pool.length > 0 ? 'green' : 'grey'}`}>{pool.length}</span>
+          <span className="muted small">
+            Waiting for a collector{coords ? ' · nearest first' : ''} — the resident's address stays private until you accept
+          </span>
+        </div>
+        {available.error ? <Note tone="error">{available.error}</Note> : null}
+        {available.loading ? (
+          <Loading label="Loading open requests…" />
+        ) : pool.length === 0 ? (
           <EmptyState icon={<Icon name="truck" size={20} />} title="No open requests right now">
             New resident requests appear here as soon as they are created.
           </EmptyState>
         ) : (
           <div className="grid cols-2" style={{ alignItems: 'start' }}>
-            {available.data?.content.map((summary) => renderAvailable(summary))}
+            {pool.map(renderAvailable)}
           </div>
-        )
-      ) : (mine.data?.content.length ?? 0) === 0 ? (
-        <EmptyState icon={<Icon name="box" size={20} />} title="You have no assigned jobs">
-          Accept a request from the available list to start collecting.
-        </EmptyState>
-      ) : (
-        <div className="grid cols-2" style={{ alignItems: 'start' }}>
-          {mine.data?.content.map((pickup) => renderJob(pickup))}
+        )}
+      </section>
+
+      <section className="work-section">
+        <div className="work-head">
+          <h2>Completed</h2>
+          <span className={`pill ${completed.length > 0 ? 'green' : 'grey'}`}>{completed.length}</span>
+          <span className="muted small">Closed by you, with the weight recorded on site</span>
         </div>
-      )}
+        {completed.length === 0 ? (
+          <EmptyState icon={<Icon name="checkCircle" size={20} />} title="Nothing completed yet">
+            Once you mark a job recovered or recycled it moves out of the queue and is listed here.
+          </EmptyState>
+        ) : (
+          <div className="grid cols-2" style={{ alignItems: 'start' }}>
+            {completed.slice(0, 6).map(renderJob)}
+          </div>
+        )}
+      </section>
     </>
   );
 }

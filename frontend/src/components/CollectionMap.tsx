@@ -114,8 +114,20 @@ export function CollectionMap({
       }).addTo(group);
     }
 
-    if (bounds.isValid()) {
-      instance.fitBounds(bounds, { padding: [36, 36], maxZoom: 15 });
+    // Selecting from the list focuses that record rather than re-framing the whole directory, so
+    // the pin the user picked is the one they end up looking at.
+    const selectedPoint = selectedId
+      ? points.find((point) => point.id === selectedId && point.latitude !== null && point.longitude !== null)
+      : undefined;
+    const animate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (selectedPoint) {
+      instance.flyTo([selectedPoint.latitude as number, selectedPoint.longitude as number], Math.max(instance.getZoom(), 15), {
+        animate,
+        duration: animate ? 0.6 : 0,
+      });
+    } else if (bounds.isValid()) {
+      instance.fitBounds(bounds, { padding: [36, 36], maxZoom: 15, animate });
     }
   }, [points, selectedId, onSelect, user]);
 

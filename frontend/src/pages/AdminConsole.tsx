@@ -1,10 +1,24 @@
 import { useState, type FormEvent } from 'react';
-import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, Stat, useAsync } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { Button, Card, EmptyState, Field, Loading, Note, PageHead, Spinner, Stat, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
 import { dateTime, kg, num } from '../lib/format';
 
-type Tab = 'applications' | 'users' | 'points' | 'analytics';
+type Tab = 'applications' | 'users' | 'points' | 'pickups' | 'analytics';
+
+/** Operational states a pickup can be filtered by, in lifecycle order. */
+const PICKUP_FILTERS: [string, string][] = [
+  ['', 'All pickups'],
+  ['REQUESTED', 'Requested'],
+  ['ACCEPTED', 'Accepted'],
+  ['SCHEDULED', 'Scheduled'],
+  ['PICKED_UP', 'Picked up'],
+  ['PROCESSING', 'Processing'],
+  ['RECOVERED', 'Recovered'],
+  ['RECYCLED', 'Recycled'],
+  ['CANCELLED', 'Cancelled'],
+];
 
 export function AdminConsole() {
   const [tab, setTab] = useState<Tab>('applications');
@@ -28,6 +42,7 @@ export function AdminConsole() {
             ['applications', 'Collector applications'],
             ['users', 'Users'],
             ['points', 'Collection points'],
+            ['pickups', 'Pickups'],
             ['analytics', 'Analytics'],
           ] as [Tab, string][]
         ).map(([key, label]) => (
@@ -47,6 +62,7 @@ export function AdminConsole() {
       {tab === 'applications' ? <Applications onError={setError} onMessage={setMessage} /> : null}
       {tab === 'users' ? <Users onError={setError} onMessage={setMessage} /> : null}
       {tab === 'points' ? <Points onError={setError} onMessage={setMessage} /> : null}
+      {tab === 'pickups' ? <Pickups /> : null}
       {tab === 'analytics' ? <Analytics /> : null}
     </>
   );
@@ -410,6 +426,79 @@ function Points({ onError, onMessage }: TabProps) {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Platform-wide pickup oversight. This is the one screen where every resident's request is
+ * visible, which is deliberate: an administrator needs to see stuck or disputed jobs. It is the
+ * only place the full record is shown outside the assigned collector's own workspace.
+ */
+function Pickups() {
+  const [status, setStatus] = useState('');
+  const list = useAsync(() => api.adminPickups(status || undefined, 0, 50), [status]);
+
+  return (
+    <Card
+      title="Pickup oversight"
+      action={
+        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 190 }} aria-label="Filter pickups by status">
+          {PICKUP_FILTERS.map(([value, label]) => (
+            <option key={value || 'all'} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      {list.error ? <Note tone="error">{list.error}</Note> : null}
+      {list.loading ? (
+        <Loading />
+      ) : (list.data?.content.length ?? 0) === 0 ? (
+        <EmptyState icon={<Icon name="truck" size={20} />} title="No pickups in this state">
+          Requests appear here as residents create them, and stay visible through to recovery.
+        </EmptyState>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Material</th>
+                <th>Resident</th>
+                <th>City</th>
+                <th>Status</th>
+                <th>Est.</th>
+                <th>Collected</th>
+                <th>Requested</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data?.content.map((pickup) => (
+                <tr key={pickup.code}>
+                  <td className="mono">
+                    <Link to={`/pickups/${pickup.code}`}>{pickup.code}</Link>
+                  </td>
+                  <td>{pickup.category?.name ?? '—'}</td>
+                  <td>{pickup.requesterName ?? '—'}</td>
+                  <td>{pickup.city}</td>
+                  <td>
+                    <StatusPill status={pickup.status} />
+                  </td>
+                  <td className="mono">{kg(pickup.estimatedQuantityKg)}</td>
+                  <td className="mono">{pickup.actualQuantityKg !== null ? kg(pickup.actualQuantityKg) : '—'}</td>
+                  <td>{dateTime(pickup.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="caption">
+        Collected weight is recorded by the assigned collector on site. A pickup reaches this table only because a
+        resident requested it through the app — nothing here is simulated.
+      </p>
+    </Card>
   );
 }
 

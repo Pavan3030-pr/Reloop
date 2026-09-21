@@ -2517,6 +2517,81 @@ select {
   }
 }
 
+/* ------------------------------------------------------------------
+   Collector work queue
+   The collector screen is a queue of work, not a dashboard: one compact
+   strip of real figures, then a section per stage of the day.
+   ------------------------------------------------------------------ */
+.collector-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 22px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-xs);
+}
+
+.collector-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin: 0;
+}
+
+.collector-figures dt {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.collector-figures dd {
+  margin: 3px 0 0;
+  font-size: 19px;
+  font-weight: 640;
+  color: var(--forest);
+}
+
+.work-section {
+  margin-top: 34px;
+}
+
+.work-section:first-of-type {
+  margin-top: 0;
+}
+
+.work-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.work-head h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.work-head .muted {
+  font-size: 12.5px;
+}
+
+@media (max-width: 620px) {
+  .collector-figures {
+    gap: 18px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
