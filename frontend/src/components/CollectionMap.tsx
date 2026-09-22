@@ -69,11 +69,14 @@ export function CollectionMap({
       bounds.extend(latlng);
 
       const selected = point.id === selectedId;
+      const pinLabel = `${point.verified ? 'Verified' : 'Unverified'} collection point: ${point.name}`;
       const icon = L.divIcon({
         className: 'reloop-pin-wrap',
+        // Decorative only: the accessible name belongs on the focusable marker element that Leaflet
+        // promotes to role="button", not on a nested span the name computation would not reach.
         html:
           `<span class="reloop-pin${point.verified ? ' verified' : ' unverified'}${selected ? ' selected' : ''}" ` +
-          `role="img" aria-label="${point.verified ? 'Verified' : 'Unverified'} collection point: ${escapeHtml(point.name)}">` +
+          `aria-hidden="true">` +
           `<span class="pin-glyph" aria-hidden="true">${RECYCLE_GLYPH}</span></span>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
@@ -85,6 +88,12 @@ export function CollectionMap({
         : 'No materials listed';
 
       const marker = L.marker(latlng, { icon, title: point.name, riseOnHover: true }).addTo(group);
+      // Leaflet makes a marker keyboard-focusable, so it needs a name of its own. The icon element
+      // is created when the layer is actually added, which can be deferred until the map finishes
+      // its first load, so the label is applied then rather than optimistically here.
+      const labelMarker = () => marker.getElement()?.setAttribute('aria-label', pinLabel);
+      marker.on('add', labelMarker);
+      labelMarker();
       marker.bindPopup(
         `<div class="map-popup">` +
           `<div class="mp-name">${escapeHtml(point.name)}</div>` +
@@ -106,7 +115,7 @@ export function CollectionMap({
       L.marker([user.lat, user.lng], {
         icon: L.divIcon({
           className: 'reloop-pin-wrap',
-          html: '<span class="reloop-me" role="img" aria-label="Your approximate location"></span>',
+          html: '<span class="reloop-me" aria-hidden="true"></span>',
           iconSize: [16, 16],
           iconAnchor: [8, 8],
         }),

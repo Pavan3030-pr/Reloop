@@ -147,6 +147,10 @@ export function CollectionPoints() {
         ) : null}
       </Card>
 
+      {/* The directory is a region of its own, so its records sit at the next level down rather
+          than skipping straight from the page heading to each record. */}
+      <h2 className="sr-only">Collection point directory</h2>
+
       {points.error ? <Note tone="error">{points.error}</Note> : null}
 
       {points.loading ? (
