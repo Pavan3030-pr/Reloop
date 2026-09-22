@@ -4,6 +4,7 @@ import app.reloop.dto.pickup.CollectPickupRequest;
 import app.reloop.dto.pickup.CollectorDashboardDto;
 import app.reloop.dto.pickup.CreatePickupRequest;
 import app.reloop.dto.pickup.PickupDto;
+import app.reloop.dto.pickup.OpenPoolFiltersDto;
 import app.reloop.dto.pickup.PickupSummaryDto;
 import app.reloop.dto.pickup.SchedulePickupRequest;
 import app.reloop.dto.pickup.StatusUpdateRequest;
@@ -29,8 +30,11 @@ import app.reloop.security.Role;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -40,6 +44,9 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -144,14 +151,71 @@ public class PickupService {
      * deciding whether to take a job needs the material, the city and a rough distance — not the
      * household's street address, coordinates, gate notes and photo. Full detail is released once
      * the request is assigned to them (see {@link #getByCode}).
+     *
+     * <p>Filtering is done here rather than in the client so that a collector never has to download
+     * every city's requests to find the ones they can serve. {@code city} and {@code materialCode}
+     * are pushed into SQL. {@code maxDistanceKm} cannot be — distance is a great-circle calculation
+     * over stored coordinates — so a radius filter is applied to the whole matching set and then
+     * paginated, never silently against one page of it.
      */
     @Transactional(readOnly = true)
     public Page<PickupSummaryDto> availableSummaries(BigDecimal callerLat, BigDecimal callerLng,
-                                                    int page, int size) {
-        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 50));
-        return pickupRequestRepository
-                .findAllByStatusOrderByCreatedAtDesc(PickupStatus.REQUESTED, pageable)
-                .map(pickup -> toSummary(pickup, callerLat, callerLng));
+                                                    String city, String materialCode,
+                                                    BigDecimal maxDistanceKm, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 50);
+        Specification<PickupRequest> filters = openPoolSpecification(city, materialCode);
+
+        if (maxDistanceKm == null) {
+            Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+            return pickupRequestRepository.findAll(filters, pageable)
+                    .map(pickup -> toSummary(pickup, callerLat, callerLng));
+        }
+
+        if (callerLat == null || callerLng == null) {
+            throw new BadRequestException(
+                    "A radius filter needs lat and lng so the distance to each request can be measured");
+        }
+        if (maxDistanceKm.signum() <= 0) {
+            throw new BadRequestException("Radius must be greater than zero");
+        }
+        List<PickupSummaryDto> within = pickupRequestRepository
+                .findAll(filters, Sort.by(Sort.Direction.DESC, "createdAt"))
+                .stream()
+                .map(pickup -> toSummary(pickup, callerLat, callerLng))
+                .filter(summary -> summary.approximateDistanceKm() != null
+                        && summary.approximateDistanceKm().compareTo(maxDistanceKm) <= 0)
+                .sorted(Comparator.comparing(PickupSummaryDto::approximateDistanceKm))
+                .toList();
+        int from = Math.min(safePage * safeSize, within.size());
+        int to = Math.min(from + safeSize, within.size());
+        return new PageImpl<>(within.subList(from, to), PageRequest.of(safePage, safeSize), within.size());
+    }
+
+    /** Filter values that exist in the pool right now, so the collector UI offers nothing empty. */
+    @Transactional(readOnly = true)
+    public OpenPoolFiltersDto openPoolFilters() {
+        return new OpenPoolFiltersDto(
+                pickupRequestRepository.findOpenCities(PickupStatus.REQUESTED),
+                pickupRequestRepository.findOpenMaterialCodes(PickupStatus.REQUESTED));
+    }
+
+    /** Unassigned requests, narrowed by the optional city and material filters. */
+    private Specification<PickupRequest> openPoolSpecification(String city, String materialCode) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("status"), PickupStatus.REQUESTED));
+            predicates.add(cb.isNull(root.get("collector")));
+            if (city != null && !city.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("city")),
+                        "%" + city.trim().toLowerCase(Locale.ROOT) + "%"));
+            }
+            if (materialCode != null && !materialCode.isBlank()) {
+                predicates.add(cb.equal(cb.upper(root.get("category").get("code")),
+                        materialCode.trim().toUpperCase(Locale.ROOT)));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
     }
 
     /**

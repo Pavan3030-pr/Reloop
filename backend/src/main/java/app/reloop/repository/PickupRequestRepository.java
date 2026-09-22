@@ -47,4 +47,17 @@ public interface PickupRequestRepository extends JpaRepository<PickupRequest, UU
     long countByCollectorSince(@Param("collectorId") UUID collectorId,
                                @Param("statuses") Collection<PickupStatus> statuses,
                                @Param("since") java.time.Instant since);
+
+    /**
+     * Cities that actually have something waiting. The collector filter offers these instead of a
+     * free-text box or a hardcoded list, so the options can never drift from the real pool.
+     */
+    @Query("select distinct p.city from PickupRequest p where p.status = :status " +
+            "and p.collector is null and p.city is not null order by p.city")
+    List<String> findOpenCities(@Param("status") PickupStatus status);
+
+    /** Material codes with at least one unassigned request, for the same reason. */
+    @Query("select distinct p.category.code from PickupRequest p where p.status = :status " +
+            "and p.collector is null order by p.category.code")
+    List<String> findOpenMaterialCodes(@Param("status") PickupStatus status);
 }

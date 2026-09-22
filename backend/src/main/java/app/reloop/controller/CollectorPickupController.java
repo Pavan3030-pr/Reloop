@@ -2,6 +2,7 @@ package app.reloop.controller;
 
 import app.reloop.dto.pickup.CollectPickupRequest;
 import app.reloop.dto.pickup.CollectorDashboardDto;
+import app.reloop.dto.pickup.OpenPoolFiltersDto;
 import app.reloop.dto.pickup.PickupDto;
 import app.reloop.dto.pickup.PickupSummaryDto;
 import app.reloop.dto.pickup.SchedulePickupRequest;
@@ -44,16 +45,31 @@ public class CollectorPickupController {
     }
 
     /**
-     * The open pool, redacted. Optional {@code lat}/{@code lng} add an approximate (1 km-rounded)
-     * distance so a collector can judge the trip without learning where anyone lives.
+     * The open pool, redacted and server-side filtered. Optional {@code lat}/{@code lng} add an
+     * approximate (1 km-rounded) distance so a collector can judge the trip without learning where
+     * anyone lives; {@code city}, {@code material} and {@code maxDistanceKm} narrow the list.
      */
     @GetMapping("/pickups")
     public Page<PickupSummaryDto> availablePickups(
             @RequestParam(name = "lat", required = false) java.math.BigDecimal lat,
             @RequestParam(name = "lng", required = false) java.math.BigDecimal lng,
+            @RequestParam(name = "city", required = false) String city,
+            @RequestParam(name = "material", required = false) String material,
+            @RequestParam(name = "maxDistanceKm", required = false) java.math.BigDecimal maxDistanceKm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return pickupService.availableSummaries(lat, lng, page, size);
+        return pickupService.availableSummaries(lat, lng, city, material, maxDistanceKm, page, size);
+    }
+
+    /**
+     * The cities and materials that actually have unassigned requests, so the pool filters can
+     * offer real options instead of a free-text guess.
+     */
+    @GetMapping("/pickups/filters")
+    public OpenPoolFiltersDto openPoolFilters() {
+        // Any COLLECTOR may read the aggregate; it exposes no requester information.
+        collectorService.verifiedPartnerOf(SecurityUtils.currentUser());
+        return pickupService.openPoolFilters();
     }
 
     @PatchMapping("/pickups/{code}/accept")
