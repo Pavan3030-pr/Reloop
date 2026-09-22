@@ -9,6 +9,7 @@ import type {
   HistoryResponse,
   ImpactResponse,
   Notification,
+  OpenPoolFilters,
   Page,
   Pickup,
   PickupSummary,
@@ -275,11 +276,34 @@ export const api = {
   }) => request<CollectionPartner>('/api/collectors/apply', { method: 'POST', body: input }),
   myCollectorApplication: () => request<CollectionPartner>('/api/collectors/me'),
   collectorDashboard: () => request<CollectorDashboard>('/api/collector/dashboard'),
-  /** The open pool: redacted summaries only, so no resident's address is exposed before assignment. */
-  availablePickups: (query: { lat?: number; lng?: number; page?: number; size?: number } = {}) =>
+  /**
+   * The open pool: redacted summaries only, so no resident's address is exposed before assignment.
+   * Narrowed server-side by city, material and radius — the client never downloads the whole
+   * global pool to filter it locally.
+   */
+  availablePickups: (query: {
+    lat?: number;
+    lng?: number;
+    city?: string;
+    material?: string;
+    maxDistanceKm?: number;
+    page?: number;
+    size?: number;
+  } = {}) =>
     request<Page<PickupSummary>>('/api/collector/pickups', {
-      query: { scope: 'available', lat: query.lat, lng: query.lng, page: query.page ?? 0, size: query.size ?? 20 },
+      query: {
+        scope: 'available',
+        lat: query.lat,
+        lng: query.lng,
+        city: query.city,
+        material: query.material,
+        maxDistanceKm: query.maxDistanceKm,
+        page: query.page ?? 0,
+        size: query.size ?? 20,
+      },
     }),
+  /** Filter values present in the pool right now, for the collector's filter controls. */
+  collectorPoolFilters: () => request<OpenPoolFilters>('/api/collector/pickups/filters'),
   /** Jobs assigned to this organisation — full detail, including the address and photo. */
   myPickups: (page = 0, size = 20) =>
     request<Page<Pickup>>('/api/collector/pickups', { query: { scope: 'mine', page, size } }),

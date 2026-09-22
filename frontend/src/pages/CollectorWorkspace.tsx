@@ -40,12 +40,36 @@ function nextAction(status: string): string | null {
   }
 }
 
+/** Radius choices offered in the pool filters. Empty means no distance limit. */
+const RADIUS_OPTIONS = ['10', '25', '50', '100'];
+
 export function CollectorWorkspace() {
   const dashboard = useAsync(() => api.collectorDashboard(), []);
   const partner = useAsync(() => api.myCollectorApplication(), []);
+  // The filter options are the cities and materials that are actually waiting, so no choice can
+  // lead to an empty result the collector could have predicted. Category names come from the
+  // public catalogue so the material filter reads as a material, not a database code.
+  const filters = useAsync(() => api.collectorPoolFilters(), []);
+  const categories = useAsync(() => api.categories(), []);
   // Reading the pool with coordinates adds the coarse distance and lets the list sort nearest-first.
   const [coords, setCoords] = useState<Coordinates | null>(null);
-  const available = useAsync(() => api.availablePickups({ lat: coords?.lat, lng: coords?.lng, size: 50 }), [coords]);
+  const [city, setCity] = useState('');
+  const [material, setMaterial] = useState('');
+  const [radiusKm, setRadiusKm] = useState('');
+  // Filtering is server-side, so the client only ever downloads the requests it can serve rather
+  // than pulling every city's pool and hiding rows in React.
+  const available = useAsync(
+    () =>
+      api.availablePickups({
+        lat: coords?.lat,
+        lng: coords?.lng,
+        city: city || undefined,
+        material: material || undefined,
+        maxDistanceKm: coords && radiusKm ? Number(radiusKm) : undefined,
+        size: 50,
+      }),
+    [coords, city, material, radiusKm],
+  );
   const mine = useAsync(() => api.myPickups(0, 50), []);
 
   const [locating, setLocating] = useState(false);
@@ -60,8 +84,38 @@ export function CollectorWorkspace() {
 
   const refresh = () => {
     dashboard.reload();
+    filters.reload();
     available.reload();
     mine.reload();
+  };
+
+  const materialName = (code: string) =>
+    categories.data?.find((category) => category.code === code)?.name ?? code;
+
+  const filtersActive = city !== '' || material !== '' || radiusKm !== '';
+
+  const clearFilters = () => {
+    setCity('');
+    setMaterial('');
+    setRadiusKm('');
+  };
+
+  /**
+   * A radius is only meaningful against a real position, so choosing one asks for the browser
+   * location once. Declining leaves the other filters usable instead of silently doing nothing.
+   */
+  const changeRadius = async (value: string) => {
+    setRadiusKm(value);
+    setError(null);
+    if (value && !coords) {
+      const position = await getBrowserLocation();
+      if (position) {
+        setCoords(position);
+      } else {
+        setRadiusKm('');
+        setError('Filtering by distance needs your location. Choose a city or a material instead.');
+      }
+    }
   };
 
   const run = async (code: string, action: () => Promise<unknown>, successMessage: string) => {
@@ -125,6 +179,8 @@ export function CollectorWorkspace() {
   const completed = jobs
     .filter((job) => TERMINAL.includes(job.status))
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+
+  const poolTotal = available.data?.totalElements ?? 0;
 
   const pool = [...(available.data?.content ?? [])].sort((a, b) => {
     if (coords) {
@@ -548,17 +604,68 @@ export function CollectorWorkspace() {
       <section className="work-section">
         <div className="work-head">
           <h2>New requests</h2>
-          <span className={`pill ${pool.length > 0 ? 'green' : 'grey'}`}>{pool.length}</span>
+          <span className={`pill ${poolTotal > 0 ? 'green' : 'grey'}`}>{poolTotal}</span>
           <span className="muted small">
             Waiting for a collector{coords ? ' · nearest first' : ''} — the resident's address stays private until you accept
           </span>
         </div>
+
+        <div className="pool-filters">
+          <Field label="City / area" htmlFor="pool-city">
+            <select id="pool-city" value={city} onChange={(event) => setCity(event.target.value)}>
+              <option value="">Any city</option>
+              {(filters.data?.cities ?? []).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Material" htmlFor="pool-material">
+            <select id="pool-material" value={material} onChange={(event) => setMaterial(event.target.value)}>
+              <option value="">Any material</option>
+              {(filters.data?.materialCodes ?? []).map((code) => (
+                <option key={code} value={code}>
+                  {materialName(code)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Within"
+            htmlFor="pool-radius"
+            hint={coords ? undefined : 'Uses your location'}
+          >
+            <select id="pool-radius" value={radiusKm} onChange={(event) => changeRadius(event.target.value)}>
+              <option value="">Any distance</option>
+              {RADIUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option} km
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="pool-filter-actions">
+            {filtersActive ? (
+              <Button type="button" className="ghost small" onClick={clearFilters}>
+                <Icon name="close" size={15} />
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
         {available.error ? <Note tone="error">{available.error}</Note> : null}
         {available.loading ? (
           <Loading label="Loading open requests…" />
         ) : pool.length === 0 ? (
-          <EmptyState icon={<Icon name="truck" size={20} />} title="No open requests right now">
-            New resident requests appear here as soon as they are created.
+          <EmptyState
+            icon={<Icon name="truck" size={20} />}
+            title={filtersActive ? 'No open requests match these filters' : 'No open requests right now'}
+          >
+            {filtersActive
+              ? 'Widen the city, material or distance filter to see the rest of the pool.'
+              : 'New resident requests appear here as soon as they are created.'}
           </EmptyState>
         ) : (
           <div className="grid cols-2" style={{ alignItems: 'start' }}>

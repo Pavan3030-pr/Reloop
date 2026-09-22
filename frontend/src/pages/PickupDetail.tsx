@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Button, Card, Loading, Note, PageHead, StatusPill, useAsync } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, ApiError } from '../lib/api';
-import { PICKUP_STAGES, dateOnly, dateTime, kg, stageIndex as stageIndexOf } from '../lib/format';
+import { PICKUP_STAGES, dateOnly, dateTime, kg, pickupNextStep, stageIndex as stageIndexOf } from '../lib/format';
 
 export function PickupDetail() {
   const { code = '' } = useParams();
@@ -12,6 +12,13 @@ export function PickupDetail() {
   const [busy, setBusy] = useState(false);
 
   const cancel = async () => {
+    if (
+      !window.confirm(
+        `Cancel request ${code}? The collector network will stop seeing it, and this cannot be undone.`,
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -33,6 +40,7 @@ export function PickupDetail() {
   const cancelled = data.status === 'CANCELLED';
   const recycled = data.status === 'RECYCLED';
   const finished = data.status === 'RECOVERED' || recycled;
+  const collected = data.actualQuantityKg !== null;
 
   const timestamps: Record<string, string | null> = {
     REQUESTED: data.createdAt,
@@ -58,6 +66,61 @@ export function PickupDetail() {
           This pickup was cancelled{data.cancelReason ? `: ${data.cancelReason}` : ''}.
         </Note>
       ) : null}
+
+      {/* Answering what / where / when / who and what happens next before the timeline: the
+          timeline shows how the request got here, this shows where it stands right now. */}
+      <Card className="pickup-summary">
+        <div className="summary-head">
+          <div className="grow">
+            <div className="stat-label">Current status</div>
+            <div className="summary-status">
+              <StatusPill status={data.status} />
+              {collected ? <span className="muted small">collected {kg(data.actualQuantityKg)}</span> : null}
+            </div>
+          </div>
+          <div className="summary-next">
+            <div className="stat-label">What happens next</div>
+            <p>{pickupNextStep(data.status, data.collectorOrganization)}</p>
+          </div>
+        </div>
+
+        <dl className="readout summary-facts">
+          <div className="readout-row">
+            <dt>What</dt>
+            <dd>
+              {data.category?.name ?? '—'}
+              <span className="muted small"> · estimated {kg(data.estimatedQuantityKg)}</span>
+            </dd>
+          </div>
+          <div className="readout-row">
+            <dt>Where</dt>
+            <dd>
+              {data.address}, {data.city} {data.pincode ?? ''}
+            </dd>
+          </div>
+          <div className="readout-row">
+            <dt>When</dt>
+            <dd>
+              {dateOnly(data.pickupDate)} · {data.timeSlot.toLowerCase()}
+              {data.scheduledAt ? <span className="muted small"> · booked {dateTime(data.scheduledAt)}</span> : null}
+            </dd>
+          </div>
+          <div className="readout-row">
+            <dt>Who</dt>
+            <dd>{data.collectorOrganization ?? 'Awaiting a verified collection partner'}</dd>
+          </div>
+        </dl>
+
+        {data.status === 'REQUESTED' ? (
+          <div className="btn-row" style={{ marginTop: 16 }}>
+            <Button type="button" className="danger small" onClick={cancel} disabled={busy}>
+              <Icon name="close" size={15} />
+              {busy ? 'Cancelling…' : 'Cancel request'}
+            </Button>
+            <span className="small muted">Requests can be cancelled until a collector accepts them.</span>
+          </div>
+        ) : null}
+      </Card>
 
       <div className="grid cols-2" style={{ alignItems: 'start' }}>
         <Card title="Progress">
@@ -86,20 +149,9 @@ export function PickupDetail() {
             })}
           </ul>
 
-          {data.status === 'REQUESTED' ? (
-            <div className="btn-row" style={{ marginTop: 16 }}>
-              <Button type="button" className="danger small" onClick={cancel} disabled={busy}>
-                {busy ? 'Cancelling…' : 'Cancel request'}
-              </Button>
-              <span className="small muted">Requests can be cancelled until a collector accepts them.</span>
-            </div>
-          ) : null}
+          {finished ? <div className="divider" /> : null}
 
-          {finished ? (
-            <div className="divider" />
-          ) : null}
-
-          {['PICKED_UP', 'PROCESSING', 'RECOVERED', 'RECYCLED'].includes(data.status) && data.actualQuantityKg !== null ? (
+          {['PICKED_UP', 'PROCESSING', 'RECOVERED', 'RECYCLED'].includes(data.status) && collected ? (
             <div className="panel soft" style={{ padding: 16, marginTop: 4 }}>
               <div className="stat-label">Collected weight</div>
               <div className="stat-value mono">{kg(data.actualQuantityKg)}</div>
@@ -113,46 +165,30 @@ export function PickupDetail() {
 
         <Card title="Details">
           <dl className="readout">
-            <div className="readout-row">
-              <dt>Material</dt>
-              <dd>{data.category?.name ?? '—'}</dd>
-            </div>
-            <div className="readout-row">
-              <dt>Estimated weight</dt>
-              <dd className="mono">{kg(data.estimatedQuantityKg)}</dd>
-            </div>
-            <div className="readout-row">
-              <dt>Actual collected weight</dt>
-              <dd className="mono">{data.actualQuantityKg !== null ? kg(data.actualQuantityKg) : 'Pending collection'}</dd>
-            </div>
-            <div className="readout-row">
-              <dt>Pickup window</dt>
-              <dd>
-                {dateOnly(data.pickupDate)} · {data.timeSlot.toLowerCase()}
-              </dd>
-            </div>
-            <div className="readout-row">
-              <dt>Address</dt>
-              <dd>
-                {data.address}, {data.city} {data.pincode ?? ''}
-              </dd>
-            </div>
-            <div className="readout-row">
-              <dt>Collector</dt>
-              <dd>{data.collectorOrganization ?? 'Awaiting a verified collector'}</dd>
-            </div>
             {data.scheduledAt ? (
               <div className="readout-row">
                 <dt>Scheduled for</dt>
                 <dd>{dateTime(data.scheduledAt)}</dd>
               </div>
             ) : null}
+            <div className="readout-row">
+              <dt>Estimated weight</dt>
+              <dd className="mono">{kg(data.estimatedQuantityKg)}</dd>
+            </div>
+            <div className="readout-row">
+              <dt>Actual collected weight</dt>
+              <dd className="mono">{collected ? kg(data.actualQuantityKg) : 'Pending collection'}</dd>
+            </div>
             {data.notes ? (
               <div className="readout-row">
                 <dt>Notes</dt>
                 <dd>{data.notes}</dd>
               </div>
             ) : null}
+            <div className="readout-row">
+              <dt>Requested</dt>
+              <dd>{dateTime(data.createdAt)}</dd>
+            </div>
           </dl>
 
           {data.photoUrl ? (

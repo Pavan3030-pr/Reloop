@@ -122,6 +122,34 @@ export function stageIndex(status: PickupStatus | string | null | undefined): nu
   return PICKUP_STAGES.findIndex((stage) => stage.key === status);
 }
 
+/**
+ * What happens next, in plain language, derived from the real status the API returned. Kept in one
+ * place so the resident-facing summary and the timeline can never disagree about the same pickup.
+ */
+export function pickupNextStep(status: PickupStatus | string | null | undefined, organisation?: string | null): string {
+  const who = organisation ?? 'Your collector';
+  switch (status) {
+    case 'REQUESTED':
+      return 'Waiting for a verified collection partner to accept this request.';
+    case 'ACCEPTED':
+      return `${who} accepted the request and will confirm a visit time.`;
+    case 'SCHEDULED':
+      return `${who} will collect the material during the scheduled window.`;
+    case 'PICKED_UP':
+      return 'The material has been weighed on site and is on its way to the facility.';
+    case 'PROCESSING':
+      return 'The material is being sorted and processed.';
+    case 'RECOVERED':
+      return 'The material completed recovery. Nothing further is needed from you.';
+    case 'RECYCLED':
+      return 'The material was recycled into new material. This journey is complete.';
+    case 'CANCELLED':
+      return 'This request was cancelled, so no collector will visit.';
+    default:
+      return '—';
+  }
+}
+
 export function todayISO(offsetDays = 0): string {
   const date = new Date();
   date.setDate(date.getDate() + offsetDays);

@@ -146,6 +146,15 @@ export interface Pickup {
   updatedAt: string;
 }
 
+/**
+ * The cities and materials that actually have open requests, so the collector's pool filters offer
+ * real options rather than a free-text guess or a hardcoded list.
+ */
+export interface OpenPoolFilters {
+  cities: string[];
+  materialCodes: string[];
+}
+
 export interface CollectorDashboard {
   availableRequests: number;
   activeJobs: number;
