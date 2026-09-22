@@ -7,6 +7,8 @@ spring:
 reloop:
   jwt:
     secret: test-only-secret-key-for-reloop-integration-tests-0123456789abcdef
+  # Pinned so calendar-day assertions do not depend on the host JVM's zone.
+  timezone: Asia/Kolkata
   dev-mode: true
   storage:
     local-dir: ./target/test-uploads

@@ -41,9 +41,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -65,6 +65,7 @@ public class PickupService {
     private final ImageStorageService imageStorageService;
     private final CollectorService collectorService;
     private final NotificationService notificationService;
+    private final Clock appClock;
 
     // ------------------------------------------------------------------ create / read
 
@@ -410,7 +411,8 @@ public class PickupService {
                 Set.of(PickupStatus.ACCEPTED, PickupStatus.SCHEDULED));
         long completed = pickupRequestRepository.countByCollectorIdAndStatusIn(partner.getId(),
                 Set.of(PickupStatus.PICKED_UP, PickupStatus.PROCESSING, PickupStatus.RECOVERED));
-        Instant startOfDay = LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+        // "Today" is the collector's calendar day in the application's operating zone.
+        Instant startOfDay = LocalDate.now(appClock).atStartOfDay(appClock.getZone()).toInstant();
         long today = pickupRequestRepository.countByCollectorSince(partner.getId(),
                 Set.of(PickupStatus.PICKED_UP, PickupStatus.PROCESSING, PickupStatus.RECOVERED), startOfDay);
         var totalKg = collectedWasteRepository.sumKgByCollector(partner.getId());

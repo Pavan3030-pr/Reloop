@@ -53,6 +53,10 @@ reloop:
   admin:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  # The calendar zone used to interpret bare dates the user supplies (recycling history
+  # "from"/"to") and the collector's "today" figure. Instants stay in UTC; only calendar
+  # days are resolved in this zone. Defaults to the operating region of the seeded network.
+  timezone: ${RELOOP_TIMEZONE:Asia/Kolkata}
   dev-mode: ${RELOOP_DEV_MODE:false}
 
 springdoc:

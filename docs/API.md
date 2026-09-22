@@ -95,7 +95,7 @@ Every transition notifies the resident.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/history` | Filters: `material` (validated against the catalog), `status`, `from`, `to` (ISO dates), paged. Returns `totalKg` and `byCategory` alongside entries. Only actually-collected waste appears. |
+| GET | `/api/history` | Filters: `material` (validated against the catalog), `status`, `from`, `to` (ISO dates), paged. Returns `totalKg` and `byCategory` alongside entries. Only actually-collected waste appears. `from`/`to` are **calendar days in the operating zone** (`RELOOP_TIMEZONE`, default `Asia/Kolkata`) — not UTC — so a collection at 03:00 local still belongs to that local day. `totalKg` respects the same window. |
 | GET | `/api/impact` | Totals plus per-material kg and estimated CO₂e. See [IMPACT.md](./IMPACT.md). |
 | GET | `/api/notifications` | Paged, newest first. |
 | GET | `/api/notifications/unread-count` | `{ "count": n }`. |

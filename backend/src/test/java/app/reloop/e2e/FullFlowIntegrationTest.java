@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.io.ByteArrayResource;
@@ -31,6 +32,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
@@ -60,6 +62,10 @@ class FullFlowIntegrationTest {
     private TestRestTemplate http;
     @Autowired
     private JdbcTemplate jdbc;
+
+    /** The zone the API resolves bare calendar dates in — see {@code app.reloop.config.TimeConfig}. */
+    @Value("${reloop.timezone:Asia/Kolkata}")
+    private String configuredTimezone;
 
     private String userEmail;
     private String userPassword = "User#Passw0rd1";
@@ -564,8 +570,21 @@ class FullFlowIntegrationTest {
                 .isEmpty();
         assertThat(streamOf(get("/api/history?status=RECOVERED", userToken).path("entries").path("content"))
                 .anyMatch(node -> node.path("pickupCode").asText().equals(pickupCode))).isTrue();
-        assertThat(streamOf(get("/api/history?from=" + LocalDate.now(), userToken).path("entries").path("content"))
-                .anyMatch(node -> node.path("pickupCode").asText().equals(pickupCode))).isTrue();
+        // "from"/"to" are calendar days in the application's operating zone, not UTC. This assertion
+        // used to fail whenever the suite ran between 00:00 and 05:30 IST: the collection had just
+        // happened on the local 23rd, but as an instant it still belonged to the UTC 22nd, so a UTC
+        // -anchored "from today" window excluded it. Both bounds are asserted, and tomorrow's window
+        // proves the day really did move.
+        LocalDate todayInAppZone = LocalDate.now(ZoneId.of(configuredTimezone));
+        assertThat(streamOf(get("/api/history?from=" + todayInAppZone, userToken).path("entries").path("content"))
+                .anyMatch(node -> node.path("pickupCode").asText().equals(pickupCode)))
+                .as("a collection made today (%s in %s) is inside a from=today window",
+                        todayInAppZone, configuredTimezone)
+                .isTrue();
+        assertThat(streamOf(get("/api/history?from=" + todayInAppZone.plusDays(1), userToken)
+                .path("entries").path("content")))
+                .as("a from=tomorrow window excludes it")
+                .isEmpty();
         assertThat(get("/api/history?material=NOT_A_MATERIAL", userToken).path("__status").asInt()).isEqualTo(400);
     }
 

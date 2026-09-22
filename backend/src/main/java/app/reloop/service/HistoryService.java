@@ -17,9 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -31,14 +32,22 @@ public class HistoryService {
     private final CollectedWasteRepository collectedWasteRepository;
     private final CollectionPartnerRepository collectionPartnerRepository;
     private final WasteCategoryRepository wasteCategoryRepository;
+    private final Clock appClock;
 
+    /**
+     * {@code from}/{@code to} arrive as bare calendar dates (the client sends an HTML date input), so
+     * they are interpreted as days in the application's operating zone — not UTC, and not whatever
+     * zone the host happens to run in. See
+     * {@link app.reloop.config.TimeConfig} for why that distinction matters.
+     */
     @Transactional(readOnly = true)
     public HistoryResponse history(UUID userId, String material, String status, LocalDate from, LocalDate to,
                                    int page, int size) {
         String categoryCode = normalizeMaterial(material);
         String normalizedStatus = normalizeStatus(status);
-        Instant fromInstant = from != null ? from.atStartOfDay().toInstant(ZoneOffset.UTC) : null;
-        Instant toInstant = to != null ? to.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC) : null;
+        ZoneId zone = appClock.getZone();
+        Instant fromInstant = from != null ? from.atStartOfDay(zone).toInstant() : null;
+        Instant toInstant = to != null ? to.plusDays(1).atStartOfDay(zone).toInstant() : null;
         if (fromInstant != null && toInstant != null && fromInstant.isAfter(toInstant)) {
             throw new BadRequestException("'from' date must be before 'to' date");
         }

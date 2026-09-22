@@ -81,6 +81,7 @@ The backend reads everything from the environment — no secrets are committed.
 | `CORS_ALLOWED_ORIGINS` | prod | Comma-separated allow-list |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | first run | Bootstraps the first admin account |
 | `RELOOP_DEV_MODE` | no | `true` returns the password-reset token in the API response (there is no mail transport in this build) |
+| `RELOOP_TIMEZONE` | prod | Calendar zone for bare dates the user supplies (history `from`/`to`) and the collector's "today" figure. Defaults to `Asia/Kolkata`. Instants are always stored in UTC; only calendar days resolve here |
 | `STORAGE_LOCAL_DIR` / `STORAGE_PUBLIC_BASE_URL` | no | Local image storage location and public URL prefix |
 
 ### Local development: `backend/.env`
