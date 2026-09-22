@@ -25,7 +25,7 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 | `backend/` | Spring Boot 3.5 service (Java 21) — REST API, JWT auth, JPA/Flyway, Gemini integration |
 | `frontend/` | React 19 + TypeScript + Vite web client (light climate-tech design system) |
 | `database/` | Notes on the schema and how migrations are managed |
-| `docs/` | [API reference](./docs/API.md) and [impact methodology](./docs/IMPACT.md) |
+| `docs/` | [API reference](./docs/API.md), [architecture](./docs/ARCHITECTURE.md), [security model](./docs/SECURITY.md), [impact methodology](./docs/IMPACT.md) and the [three-minute demo script](./docs/DEMO.md) |
 | `scripts/` | Local setup and run helpers |
 
 ## Stack
@@ -146,7 +146,7 @@ The backend suite runs against a real PostgreSQL database (`reloop_test`) and th
 no mocked success paths.
 
 ```bash
-cd backend && ./mvnw test      # 39 tests
+cd backend && ./mvnw test      # 77 tests
 cd frontend && npm run build   # typecheck + production build
 cd frontend && npm run dev     # dev server
 ```
@@ -164,6 +164,13 @@ What the suite covers:
   data, JSON output requested, no deprecated sampling parameters) and image validation.
 - **`FullFlowIntegrationTest`** also covers the unconfigured case: with no key, `/api/waste/analyze`
   returns `503` and no fabricated result.
+- **`AuthorizationAuditTest`** — the security and integrity controls: simultaneous accepts leave
+  exactly one winner (and one notification), the pool never carries requester details, and neither a
+  resident nor a collector can read or mutate another party's records.
+- **`CollectorPoolFilterTest`** — server-side pool filtering by city, material and radius, that a
+  radius needs a position, that filters narrow rather than widen, and that filtering exposes no
+  additional personal data.
+- **`ImageStorageServiceTest`** — content-based upload validation against real byte signatures.
 - **`GeminiServiceTest`**, **`JwtServiceTest`**, **`GeoUtilsTest`** — unit coverage of response
   parsing, token issue/parse/expiry and distance maths.
 
@@ -176,6 +183,9 @@ What the suite covers:
   collector records the actual weighed quantity. Estimated pickup weights never contribute.
 - **CO₂e is labelled as an estimate** everywhere it appears, with the coefficients and their
   limitations documented in [docs/IMPACT.md](./docs/IMPACT.md).
+- **The open pool is filtered and redacted.** Collectors narrow it by city, material and distance
+  server-side, and see only material/city/window/rounded distance until they accept — a household's
+  address, coordinates, notes and photo unlock per request, not for the whole pool.
 - **Collectors are vetted.** A collector can only act after an administrator verifies the
   application; verification is what grants the `COLLECTOR` role.
 - **Images are validated by content, not filename** — magic-byte sniffing plus size and type checks.
@@ -184,6 +194,11 @@ What the suite covers:
 
 Implemented and verified end to end: authentication (JWT + rotating refresh tokens, password reset),
 waste scanning with AI-assisted classification and manual fallback, collection-point directory with
-distance search, the full pickup lifecycle, collector application/verification and workspace,
-notifications, recycling history, impact reporting, and an admin console (directory, catalog,
-analytics).
+distance search, the full pickup lifecycle (`REQUESTED → ACCEPTED → SCHEDULED → PICKED_UP →
+PROCESSING → RECOVERED`/`RECYCLED`, plus cancellation before acceptance and release by a collector),
+a filtered collector workspace, collector application/verification, notifications, recycling
+history, impact reporting, and an admin console (directory, catalog, pickups, analytics).
+
+See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the enforced state machine and authorization
+model, [docs/SECURITY.md](./docs/SECURITY.md) for what is verified and what is not, and
+[docs/DEMO.md](./docs/DEMO.md) to present it.

@@ -80,6 +80,15 @@ class FullFlowIntegrationTest {
     static void bootstrapAdmin(DynamicPropertyRegistry registry) {
         registry.add("reloop.admin.email", () -> "e2e-admin@reloop.test");
         registry.add("reloop.admin.password", () -> "Admin#Passw0rd1");
+
+        // This suite asserts the "AI is not configured" path (503, never a fabricated result).
+        // application.yml imports backend/.env when tests run from the backend directory, so on a
+        // developer machine with a real GEMINI_API_KEY the assertion would depend on whether that
+        // machine can currently reach Google. Pin the provider off instead: no key, and a base URL
+        // that cannot answer, so the 503 is produced by configuration rather than by the network.
+        // The live provider path is covered by AiAnalysisWithStubProviderTest.
+        registry.add("reloop.gemini.api-key", () -> "");
+        registry.add("reloop.gemini.base-url", () -> "http://127.0.0.1:1");
     }
 
     @BeforeAll
