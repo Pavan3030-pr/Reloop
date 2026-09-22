@@ -57,6 +57,22 @@ public class PickupService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /**
+     * Ceiling on the ratio between what a collector weighed and what the resident estimated.
+     *
+     * <p>The estimate is the only reference the platform has for "how much should this weigh", and it
+     * is already validated when the request is created (at least 0.1 kg, at most six integer digits),
+     * so bounding the actual weight as a multiple of it also bounds it in absolute terms - no second,
+     * hand-picked weight limit needs to be invented or maintained.
+     *
+     * <p>Ten is deliberately generous. Households underestimate often and badly: material compacts,
+     * more bags appear than expected, and a 2 kg guess that weighs 15 kg on the scale is a normal
+     * collection rather than an error. The guard exists for the other direction - a misplaced decimal
+     * point or an extra digit, which is how a 3.2 kg pickup becomes 32 kg or 100000 kg and quietly
+     * inflates the resident's history, their impact figures and the platform totals built from them.
+     */
+    private static final BigDecimal MAX_ACTUAL_TO_ESTIMATE_RATIO = BigDecimal.TEN;
+
     private final PickupRequestRepository pickupRequestRepository;
     private final CollectedWasteRepository collectedWasteRepository;
     private final CollectionPartnerRepository collectionPartnerRepository;
@@ -281,6 +297,8 @@ public class PickupService {
         if (collectedWasteRepository.existsByPickupRequestId(pickup.getId())) {
             throw new ConflictException("A collection record already exists for this pickup");
         }
+        // Before any mutation: a rejected reading must leave the pickup exactly as it was.
+        assertPlausibleActualWeight(pickup, request.actualQuantityKg());
         pickup.setStatus(PickupStatus.PICKED_UP);
         pickup.setActualQuantityKg(request.actualQuantityKg());
         pickup.setPickedUpAt(Instant.now());
@@ -419,6 +437,32 @@ public class PickupService {
         long totalCollections = collectedWasteRepository.countByCollector(partner.getId());
         return new CollectorDashboardDto(available, active, completed, today,
                 totalKg == null ? java.math.BigDecimal.ZERO : totalKg, totalCollections);
+    }
+
+    /**
+     * Rejects a weighed value that cannot plausibly belong to this pickup, so a mistyped reading never
+     * reaches the history, impact or analytics figures that are derived from it.
+     *
+     * @see #MAX_ACTUAL_TO_ESTIMATE_RATIO
+     */
+    private void assertPlausibleActualWeight(PickupRequest pickup, BigDecimal actualQuantityKg) {
+        BigDecimal estimate = pickup.getEstimatedQuantityKg();
+        // The create-time validation keeps both of these populated and positive; this is belt and braces.
+        if (estimate == null || estimate.signum() <= 0 || actualQuantityKg == null) {
+            return;
+        }
+        BigDecimal ceiling = estimate.multiply(MAX_ACTUAL_TO_ESTIMATE_RATIO);
+        if (actualQuantityKg.compareTo(ceiling) > 0) {
+            throw new BadRequestException("Actual weight " + plain(actualQuantityKg)
+                    + " kg is more than " + plain(MAX_ACTUAL_TO_ESTIMATE_RATIO)
+                    + "x the estimated " + plain(estimate)
+                    + " kg for this pickup. Check the scale reading before recording the collection.");
+        }
+    }
+
+    /** Keeps a number in a message readable: no trailing zeros, and never scientific notation. */
+    private String plain(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
     }
 
     // ------------------------------------------------------------------ helpers

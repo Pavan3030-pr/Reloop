@@ -731,7 +731,69 @@ class FullFlowIntegrationTest {
         assertThat(rejected.path("message").asText()).containsIgnoringCase("JPG, PNG, or WEBP");
     }
 
+    @Test
+    @Order(20)
+    void step20_recordedWeightMustBePlausibleAgainstTheResidentsEstimate() {
+        // The resident's estimate is the reference, so the ceiling is 4.00 kg x 10 = 40.00 kg.
+        String code = acceptedPickupWithEstimate("4.00");
+
+        // An impossible reading: what an extra digit or a lost decimal point looks like.
+        JsonNode absurd = collect(code, "100000");
+        assertThat(absurd.path("__status").asInt()).isEqualTo(400);
+        assertThat(absurd.path("message").asText())
+                .contains("100000").contains("10x").contains("estimated");
+
+        // One hundredth of a kilogram past the ceiling is already out.
+        assertThat(collect(code, "40.01").path("__status").asInt()).isEqualTo(400);
+        // Zero and negative readings stay rejected, as before.
+        assertThat(collect(code, "0").path("__status").asInt()).isEqualTo(400);
+        assertThat(collect(code, "-2").path("__status").asInt()).isEqualTo(400);
+
+        // A rejected reading must not have written anything: the pickup is still uncollected and no
+        // weighed record exists for it, so nothing can reach history, impact or the admin totals.
+        JsonNode untouched = get("/api/pickups/" + code, userToken);
+        assertThat(untouched.path("status").asText()).isEqualTo("ACCEPTED");
+        assertThat(untouched.path("actualQuantityKg").isNull()).isTrue();
+        assertThat(streamOf(get("/api/history", userToken).path("entries").path("content"))
+                .noneMatch(node -> node.path("pickupCode").asText().equals(code))).isTrue();
+
+        // Exactly at the ceiling is accepted: a badly underestimated pickup must still be recordable.
+        JsonNode atCeiling = collect(code, "40.00");
+        assertThat(atCeiling.path("__status").asInt()).isEqualTo(200);
+        assertThat(atCeiling.path("actualQuantityKg").asDouble()).isEqualTo(40.00);
+
+        // And an ordinary under-estimate (1.6x here, the usual direction) is untouched by the rule.
+        String ordinaryCode = acceptedPickupWithEstimate("4.00");
+        JsonNode ordinary = collect(ordinaryCode, "6.40");
+        assertThat(ordinary.path("__status").asInt()).isEqualTo(200);
+        assertThat(ordinary.path("actualQuantityKg").asDouble()).isEqualTo(6.40);
+    }
+
     // ------------------------------------------------------------------ utils
+
+    /** Creates a pickup with the given estimate and lets the verified collector accept it. */
+    private String acceptedPickupWithEstimate(String estimateKg) {
+        JsonNode created = postMultipart("/api/pickups", userToken, Map.of(
+                "categoryId", plasticCategoryId,
+                "estimatedQuantityKg", estimateKg,
+                "address", "Flat 302, Lake View Residency",
+                "city", "Hyderabad",
+                "pickupDate", LocalDate.now().plusDays(1).toString(),
+                "timeSlot", "MORNING"),
+                null, null, null, null);
+        assertThat(created.path("__status").asInt())
+                .as("create pickup with estimate %s", estimateKg).isEqualTo(201);
+
+        String code = created.path("code").asText();
+        assertThat(patch("/api/collector/pickups/" + code + "/accept", collectorToken, null)
+                .path("__status").asInt()).as("accept %s", code).isEqualTo(200);
+        return code;
+    }
+
+    private JsonNode collect(String code, String actualQuantityKg) {
+        return patch("/api/collector/pickups/" + code + "/collect", collectorToken,
+                Map.of("actualQuantityKg", actualQuantityKg));
+    }
 
     private static java.util.stream.Stream<JsonNode> streamOf(JsonNode arrayNode) {
         if (arrayNode == null || !arrayNode.isArray()) {

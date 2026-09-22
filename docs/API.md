@@ -85,7 +85,7 @@ Requires role `COLLECTOR` **and** a `VERIFIED` partner record.
 | GET | `/api/collector/pickups/filters` | `{cities, materialCodes}` — the values actually present in the open pool, so the filter controls offer only options that can match. Derived from pending requests, never from the full catalogue. Requires a verified partner. |
 | PATCH | `/api/collector/pickups/{code}/accept` | Claims an available request. Safe under concurrency: simultaneous accepts leave exactly one winner, and the loser gets `409` rather than a false confirmation (optimistic lock on `pickup_requests.version`). |
 | PATCH | `/api/collector/pickups/{code}/schedule` | `{scheduledAt}` — must be in the future. |
-| PATCH | `/api/collector/pickups/{code}/collect` | `{actualQuantityKg, notes?}` — writes the `collected_waste` record that history and impact both read. One record per pickup. |
+| PATCH | `/api/collector/pickups/{code}/collect` | `{actualQuantityKg, notes?}` — writes the `collected_waste` record that history and impact both read. One record per pickup. The reading must be `> 0` and at most **10x the resident's estimate** (`400` otherwise, before anything is written) so one mistyped weight cannot inflate the figures derived from it. |
 | PATCH | `/api/collector/pickups/{code}/status` | `{status}` — `PROCESSING`, `RECOVERED` or `RECYCLED`. Only `PICKED_UP → PROCESSING` and `PROCESSING → RECOVERED\|RECYCLED` are legal; both endings are terminal. |
 | PATCH | `/api/collector/pickups/{code}/release` | Returns an accepted/scheduled request to the pool. |
 
