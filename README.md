@@ -70,4 +70,5 @@ cd frontend && npm run build   # typecheck + production build
 - [Security model](docs/SECURITY.md)
 - [Impact methodology](docs/IMPACT.md)
 - [Three-minute demo script](docs/DEMO.md)
+- [Pitch deck — Team TechGaint](docs/submission/ReLoop-Pitch-Deck-TechGaint.pptx)
 - SANKALP submission: [pitch deck](docs/submission/ReLoop-Sankalp-Pitch.pptx), [video script](docs/submission/VIDEO_SCRIPT.md)
