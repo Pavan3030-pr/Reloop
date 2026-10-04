@@ -66,7 +66,7 @@ The recycling-history response nests this same object under `entries`.
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/api/waste/categories` | **Public.** Seeded taxonomy (10 active categories). |
-| POST | `/api/waste/analyze` | `multipart/form-data` with `image`. Calls Gemini and returns a structured suggestion. **Nothing is persisted.** Returns `503` with a clear message when AI is unavailable so the client can fall back to manual classification. |
+| POST | `/api/waste/analyze` | `multipart/form-data` with `image`. Calls Gemini and returns a structured suggestion. **Nothing is persisted.** Unsupported, oversized or corrupted media is rejected with `400` **before** the provider is called (declared type must be JPEG/PNG/WEBP, and the bytes must really be one of those; a missing or `application/octet-stream` declared type defers to the content). Returns `503` with a clear message when AI is unavailable so the client can fall back to manual classification. |
 | POST | `/api/waste/scans` | `multipart/form-data`: `categoryId`, optional `detectedItem`, `confidence`, `recyclable`, `hazardous`, `disposalInstruction`, `aiRawResponse`, `image`. Supplying `confidence` marks the scan as `AI`, otherwise `MANUAL`. Images are validated by content (JPG/PNG/WEBP magic bytes, ≤ 8 MB) and the stored extension is derived from the detected type — the filename and the browser-declared content type are advisory and never reject a valid photo. |
 | GET | `/api/waste/scans` | Paged, newest first. |
 | GET | `/api/waste/scans/{id}` | Owner or admin only. |

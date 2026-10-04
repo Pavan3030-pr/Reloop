@@ -58,6 +58,21 @@ public class ImageStorageService {
             "image/png", "png",
             "image/webp", "webp");
 
+    /**
+     * The media types ReLoop accepts for a scan image. Enforced on the *declared* multipart part
+     * before any provider call; the bytes remain the final authority (see
+     * {@link #detectImageType(MultipartFile)}).
+     */
+    public static final Set<String> ALLOWED_SCAN_MIME_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+
+    /**
+     * Declared types that carry no usable signal, so the sniffed content decides instead of the
+     * header. Mobile galleries and clipboard paste routinely send no type at all or
+     * {@code application/octet-stream}, and rejecting those turns away perfectly good photos.
+     */
+    private static final Set<String> UNINFORMATIVE_DECLARED_TYPES =
+            Set.of("", "application/octet-stream", "binary/octet-stream");
+
     /** Only used to note conventional metadata in a debug line; it never decides an upload. */
     private static final Set<String> CONVENTIONAL_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
@@ -82,6 +97,34 @@ public class ImageStorageService {
             throw unsupportedImage();
         }
         return detected;
+    }
+
+    /**
+     * Validates a scan upload <em>before</em> it can cost an AI provider call: the declared media type
+     * must be a supported image (or too generic to judge), and the content must really be one of the
+     * supported image formats. Anything else becomes a {@link BadRequestException} (HTTP 400) instead
+     * of an unhandled error or a wasted provider request.
+     *
+     * @return the MIME type detected from the file's content
+     */
+    public String validateScanUpload(MultipartFile file) {
+        String declared = normalizeDeclaredType(file == null ? null : file.getContentType());
+        if (!UNINFORMATIVE_DECLARED_TYPES.contains(declared)
+                && !ALLOWED_SCAN_MIME_TYPES.contains(declared)) {
+            throw new BadRequestException(
+                    "Unsupported media type. Upload a JPEG, PNG or WEBP photo of the item.");
+        }
+        // Content is still authoritative: a truthful-looking header cannot smuggle a non-image past.
+        return detectImageType(file);
+    }
+
+    /** Normalises a Content-Type header, mapping the common non-standard {@code image/jpg} alias. */
+    private String normalizeDeclaredType(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        String type = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return "image/jpg".equals(type) ? "image/jpeg" : type;
     }
 
     /**

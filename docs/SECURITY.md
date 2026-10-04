@@ -76,8 +76,16 @@ to that collector. Field-level regression cover: `CollectorPoolFilterTest.poolNe
 - Enforces a size cap and rejects non-images, regardless of the declared MIME type.
 - Generates stored filenames server-side; no client-supplied path segments reach the filesystem.
 
-Covered by `ImageStorageServiceTest` (real byte signatures, including a PNG named with no extension
-and a text file named `.png`) and by the end-to-end upload step in `FullFlowIntegrationTest`.
+Before any AI provider call, `WasteScanService` also runs `ImageStorageService.validateScanUpload`:
+the declared multipart media type must be JPEG/PNG/WEBP — or absent / `application/octet-stream`, in
+which case the sniffed content decides. An unsupported, oversized or corrupted upload is therefore
+refused with `400` at the boundary instead of reaching Gemini or surfacing as a `500`.
+
+Covered by `ImageStorageServiceTest` (real byte signatures, including a PNG named with no extension,
+a text file named `.png`, and a signature-only fake PNG), by `AiAnalysisWithStubProviderTest`
+(unsupported declared type → `400`, unsupported format → `400`, provider network glitch → `503`, all
+without a provider call where applicable), and by the end-to-end upload step in
+`FullFlowIntegrationTest`.
 
 ## Secrets
 

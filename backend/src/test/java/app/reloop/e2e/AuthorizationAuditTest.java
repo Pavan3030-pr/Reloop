@@ -105,21 +105,37 @@ class AuthorizationAuditTest {
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch release = new CountDownLatch(1);
         try {
-            List<Callable<Integer>> racers = List.of(
+            List<Callable<JsonNode>> racers = List.of(
                     acceptRacer(collectorAToken, code, release),
                     acceptRacer(collectorBToken, code, release));
-            List<Future<Integer>> futures = new ArrayList<>();
+            List<Future<JsonNode>> futures = new ArrayList<>();
             racers.forEach(r -> futures.add(pool.submit(r)));
             release.countDown(); // both requests leave together
 
-            List<Integer> statuses = new ArrayList<>();
-            for (Future<Integer> future : futures) {
-                statuses.add(future.get(60, TimeUnit.SECONDS));
+            List<JsonNode> responses = new ArrayList<>();
+            for (Future<JsonNode> future : futures) {
+                responses.add(future.get(60, TimeUnit.SECONDS));
             }
+            List<Integer> statuses = responses.stream().map(r -> r.path("__status").asInt()).toList();
 
             assertThat(statuses)
                     .as("one collector must be told it won, the other must get a conflict (got %s)", statuses)
                     .containsExactlyInAnyOrder(200, 409);
+
+            // The loser gets a clean, actionable 409 payload — not a 500, and with no internal
+            // class names, entity names or stack detail leaking through the exception wrapper.
+            JsonNode loser = responses.stream()
+                    .filter(r -> r.path("__status").asInt() == 409)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(loser.path("message").asText())
+                    .contains("already been updated or claimed")
+                    .contains("refresh your dashboard");
+            assertThat(loser.toString())
+                    .doesNotContain("Exception")
+                    .doesNotContain("OptimisticLock")
+                    .doesNotContain("app.reloop")
+                    .doesNotContain("StackTrace");
         } finally {
             pool.shutdownNow();
         }
@@ -412,10 +428,10 @@ class AuthorizationAuditTest {
 
     // ------------------------------------------------------------------ helpers
 
-    private Callable<Integer> acceptRacer(String token, String code, CountDownLatch release) {
+    private Callable<JsonNode> acceptRacer(String token, String code, CountDownLatch release) {
         return () -> {
             release.await();
-            return patch("/api/collector/pickups/" + code + "/accept", token, null).path("__status").asInt();
+            return patch("/api/collector/pickups/" + code + "/accept", token, null);
         };
     }
 

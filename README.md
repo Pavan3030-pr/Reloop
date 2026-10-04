@@ -59,7 +59,7 @@ The backend reads everything from the environment; no secrets are committed.
 ## Testing
 
 ```bash
-cd backend && ./mvnw test      # 85 tests against real PostgreSQL and real HTTP
+cd backend && ./mvnw test      # 90 tests against real PostgreSQL and real HTTP
 cd frontend && npm run build   # typecheck + production build
 ```
 

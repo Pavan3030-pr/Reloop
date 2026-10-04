@@ -41,9 +41,11 @@ public class WasteScanService {
         if (image == null || image.isEmpty()) {
             throw new app.reloop.exception.BadRequestException("Upload an image of the waste item first");
         }
-        // Reject non-images before spending a provider call, and trust the type detected from the
-        // file's content rather than the one the client declared.
-        String detectedMime = imageStorageService.detectImageType(image);
+        // Reject unsupported, oversized or corrupted media before spending a provider call. The
+        // declared media type is checked against the allow-list first, then the file's content
+        // decides — a truthful header cannot make a non-image look valid, and a generic
+        // application/octet-stream header cannot make a real photo look invalid.
+        String detectedMime = imageStorageService.validateScanUpload(image);
         GeminiService.GeminiAnalysis analysis = geminiService.analyze(safeBytes(image), detectedMime);
         WasteCategory category = resolveCategory(analysis.category());
         BigDecimal confidence = BigDecimal.valueOf(analysis.confidence()).setScale(3, RoundingMode.HALF_UP);

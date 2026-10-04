@@ -51,6 +51,8 @@ class AiAnalysisWithStubProviderTest {
             + "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Sentinel status: close the connection without answering, simulating a network glitch/timeout. */
+    private static final int GLITCH = Integer.MIN_VALUE;
     private static final AtomicInteger PROVIDER_STATUS = new AtomicInteger(200);
     private static final AtomicReference<String> PROVIDER_BODY = new AtomicReference<>("");
     private static final AtomicReference<String> LAST_PATH = new AtomicReference<>("");
@@ -70,6 +72,10 @@ class AiAnalysisWithStubProviderTest {
                 LAST_PATH.set(exchange.getRequestURI().getPath());
                 LAST_API_KEY.set(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
                 LAST_REQUEST_BODY.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                if (PROVIDER_STATUS.get() == GLITCH) {
+                    exchange.close(); // drop the connection mid-exchange, as a real network glitch would
+                    return;
+                }
                 byte[] payload = PROVIDER_BODY.get().getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(PROVIDER_STATUS.get(), payload.length == 0 ? -1 : payload.length);
                 try (OutputStream out = exchange.getResponseBody()) {
@@ -150,6 +156,27 @@ class AiAnalysisWithStubProviderTest {
                 return filename;
             }
         });
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setBearerAuth(token);
+        return toNode(http.exchange("/api/waste/analyze", HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class));
+    }
+
+    /**
+     * Uploads an image with an explicit multipart part Content-Type, exactly as a browser sets it
+     * from the picked file's type. Used to prove the declared-media-type guard rejects anomalies.
+     */
+    private JsonNode analyzeWithPartType(String token, byte[] bytes, String filename, String partType) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(MediaType.parseMediaType(partType));
+        body.add("image", new HttpEntity<>(new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        }, partHeaders));
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         headers.setBearerAuth(token);
@@ -299,6 +326,52 @@ class AiAnalysisWithStubProviderTest {
     }
 
     @Test
+    void unsupportedDeclaredMediaTypeIsRejectedWith400NotServerError() {
+        String token = registerUser();
+        int callsBefore = PROVIDER_CALLS.get();
+
+        // A real PNG's bytes, but the client declares a PDF: an unsupported-media anomaly that used
+        // to depend on the provider to catch. It must be refused at the boundary, not surfaced as 500.
+        JsonNode analysis = analyzeWithPartType(token, Base64.getDecoder().decode(PNG_1X1), "scan.pdf",
+                "application/pdf");
+
+        assertThat(analysis.path("__status").asInt()).isEqualTo(400);
+        assertThat(analysis.path("message").asText()).containsIgnoringCase("WEBP");
+        assertThat(analysis.has("item")).isFalse();
+        assertThat(PROVIDER_CALLS.get()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void unsupportedImageFormatIsRejectedWith400Not500() {
+        String token = registerUser();
+        int callsBefore = PROVIDER_CALLS.get();
+        // A real GIF signature — a genuine image, but not a format ReLoop supports — declared honestly.
+        byte[] gif = concat("GIF89a".getBytes(StandardCharsets.US_ASCII),
+                new byte[]{0x01, 0x00, 0x01, 0x00, (byte) 0x80, 0x00, 0x00, 0x00, 0x00, 0x00});
+
+        JsonNode analysis = analyzeWithPartType(token, gif, "clip.gif", "image/gif");
+
+        assertThat(analysis.path("__status").asInt()).isEqualTo(400);
+        assertThat(analysis.path("message").asText()).containsIgnoringCase("WEBP");
+        assertThat(analysis.has("item")).isFalse();
+        assertThat(PROVIDER_CALLS.get()).isEqualTo(callsBefore);
+    }
+
+    @Test
+    void providerNetworkGlitchYields503Not500() {
+        providerResponds(GLITCH, "");
+        String token = registerUser();
+
+        JsonNode analysis = analyze(token, Base64.getDecoder().decode(PNG_1X1), "bottle.png", "image/png");
+
+        assertThat(analysis.path("__status").asInt()).isEqualTo(503);
+        assertThat(analysis.path("message").asText()).containsIgnoringCase("temporarily unavailable");
+        assertThat(analysis.has("item")).isFalse();
+
+        providerResponds(200, ""); // restore for any test that runs after this one
+    }
+
+    @Test
     void missingImagePartIsRejectedWith400NotServerError() {
         String token = registerUser();
         int callsBefore = PROVIDER_CALLS.get();
@@ -334,5 +407,19 @@ class AiAnalysisWithStubProviderTest {
         ResponseEntity<String> response = http.exchange("/api/waste/analyze", HttpMethod.POST,
                 new HttpEntity<>(body, headers), String.class);
         assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        int length = 0;
+        for (byte[] part : parts) {
+            length += part.length;
+        }
+        byte[] out = new byte[length];
+        int offset = 0;
+        for (byte[] part : parts) {
+            System.arraycopy(part, 0, out, offset, part.length);
+            offset += part.length;
+        }
+        return out;
     }
 }

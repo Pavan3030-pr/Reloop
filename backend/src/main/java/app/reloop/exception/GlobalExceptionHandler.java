@@ -2,12 +2,14 @@ package app.reloop.exception;
 
 import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.StaleObjectStateException;
 import org.hibernate.StaleStateException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
@@ -27,6 +29,14 @@ import java.util.Map;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * Fixed, user-facing text for every lost-update conflict. One constant keeps both conflict
+     * handlers in sync and keeps the client contract stable.
+     */
+    private static final String CONCURRENT_UPDATE_MESSAGE =
+            "This pickup task has already been updated or claimed by another user. "
+                    + "Please refresh your dashboard and try again.";
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex) {
@@ -95,17 +105,39 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Lost-update conflicts (and any Hibernate/JPA flavour of them) become a 409 with an
-     * actionable message rather than a 500. The clearest example: two collectors accepting the
-     * same pickup at the same instant — one wins, the other is told to reload.
+     * The exact optimistic-lock types raised when two collectors claim or update the same pickup at
+     * the same instant: Spring's {@link ObjectOptimisticLockingFailureException} (a lost
+     * {@code @Version} update) and Hibernate's {@link StaleObjectStateException} (a stale row).
+     *
+     * <p>Named explicitly, ahead of the broader parent handler below, so the intent is obvious and a
+     * future change to the generic handler cannot silence the pickup-claim conflict by accident.
+     */
+    @ExceptionHandler({ObjectOptimisticLockingFailureException.class, StaleObjectStateException.class})
+    public ResponseEntity<ErrorResponse> handlePickupClaimConflict(Exception ex) {
+        log.info("Concurrent pickup claim/update rejected ({})", ex.getClass().getSimpleName());
+        log.debug("Optimistic lock detail: {}", ex.getMessage());
+        return concurrencyConflict();
+    }
+
+    /**
+     * Any other Hibernate/JPA flavour of a lost update. Kept as a safety net so the pickup conflict
+     * above still succeeds even if the underlying exception type changes with a driver or ORM bump.
      */
     @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class,
             StaleStateException.class})
     public ResponseEntity<ErrorResponse> handleOptimisticLock(Exception ex) {
-        log.info("Concurrent modification rejected: {}", ex.getMessage());
+        log.info("Concurrent modification rejected ({})", ex.getClass().getSimpleName());
+        log.debug("Optimistic lock detail: {}", ex.getMessage());
+        return concurrencyConflict();
+    }
+
+    /**
+     * The single, fixed conflict payload. It deliberately carries no exception type, no SQL, no
+     * transaction id and no stack trace — only an actionable message the caller can act on.
+     */
+    private ResponseEntity<ErrorResponse> concurrencyConflict() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of(409, "Conflict",
-                        "Someone else changed this request at the same moment. Reload it and try again."));
+                .body(ErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", CONCURRENT_UPDATE_MESSAGE));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
