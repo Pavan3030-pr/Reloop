@@ -88,4 +88,4 @@ Regenerate with `python scripts/build-pitch-deck.py && python scripts/render-pit
 ![9. Scale](docs/submission/preview/slide-09.png)
 ![10. What exists today](docs/submission/preview/slide-10.png)
 ![11. The ask](docs/submission/preview/slide-11.png)
-![12. Close](docs/submission/preview/slide-12.png)
+![12. Close](docs/submission/preview/slide-12.png). 
