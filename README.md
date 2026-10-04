@@ -27,6 +27,8 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 | `database/` | Notes on the schema and how migrations are managed |
 | `docs/` | [API reference](./docs/API.md), [architecture](./docs/ARCHITECTURE.md), [security model](./docs/SECURITY.md), [impact methodology](./docs/IMPACT.md) and the [three-minute demo script](./docs/DEMO.md) |
 | `scripts/` | Local setup and run helpers |
+| `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile` | One-command container stack (Postgres + API + nginx-served client) |
+| `.github/workflows/ci.yml` | CI: the backend suite against a real Postgres service, and the frontend build |
 
 ## Stack
 
@@ -41,7 +43,7 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 
 ## Quick start
 
-Prerequisites: **JDK 21+**, **Node 20+**, **PostgreSQL 14+**.
+Prerequisites: **JDK 21+**, **Node 20+**, **PostgreSQL 14+** (or just **Docker** — see below).
 
 ```bash
 # 1. Databases (creates reloop_dev and reloop_test)
@@ -60,6 +62,22 @@ cd backend && ./mvnw spring-boot:run
 
 Open <http://localhost:5173>. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` (see below) before the first
 backend start to bootstrap an administrator.
+
+### Run the whole stack with Docker
+
+No JDK, Node or PostgreSQL needed — one command builds and runs the database, the API and the
+client (nginx serves the built bundle and proxies `/api` and `/uploads` to the backend):
+
+```bash
+JWT_SECRET="$(openssl rand -base64 48)" \
+  ADMIN_EMAIL=admin@reloop.local ADMIN_PASSWORD='change-me-now' \
+  docker compose up --build
+```
+
+Open <http://localhost:5173>. Add `GEMINI_API_KEY=...` to the same command to switch on the AI
+scanner. `JWT_SECRET` is required — Compose refuses to start without it rather than sign tokens with
+a default. Everything else (database password, CORS origins, timezone) can be set from the shell or
+a root `.env` file.
 
 ### Health check
 
@@ -83,6 +101,8 @@ The backend reads everything from the environment — no secrets are committed.
 | `RELOOP_DEV_MODE` | no | `true` returns the password-reset token in the API response (there is no mail transport in this build) |
 | `RELOOP_TIMEZONE` | prod | Calendar zone for bare dates the user supplies (history `from`/`to`) and the collector's "today" figure. Defaults to `Asia/Kolkata`. Instants are always stored in UTC; only calendar days resolve here |
 | `STORAGE_LOCAL_DIR` / `STORAGE_PUBLIC_BASE_URL` | no | Local image storage location and public URL prefix |
+| `RELOOP_RATE_LIMIT_ENABLED` | no | Defaults to `true`. Per-IP brute-force guard on the unauthenticated auth endpoints (`login`, `register`, password reset) |
+| `RELOOP_RATE_LIMIT_AUTH_PER_MINUTE` | no | Defaults to `30`. Attempts allowed per client IP per minute before the API answers `429` |
 
 ### Local development: `backend/.env`
 
@@ -147,7 +167,7 @@ The backend suite runs against a real PostgreSQL database (`reloop_test`) and th
 no mocked success paths.
 
 ```bash
-cd backend && ./mvnw test      # 77 tests
+cd backend && ./mvnw test      # 85 tests
 cd frontend && npm run build   # typecheck + production build
 cd frontend && npm run dev     # dev server
 ```
@@ -171,6 +191,9 @@ What the suite covers:
 - **`CollectorPoolFilterTest`** — server-side pool filtering by city, material and radius, that a
   radius needs a position, that filters narrow rather than widen, and that filtering exposes no
   additional personal data.
+- **`AuthRateLimitTest`** — the brute-force guard on the auth endpoints: attempts past the limit
+  answer `429` with a `Retry-After` header, the counter is per client address, and unrelated
+  endpoints are untouched.
 - **`ImageStorageServiceTest`** — content-based upload validation against real byte signatures.
 - **`GeminiServiceTest`**, **`JwtServiceTest`**, **`GeoUtilsTest`** — unit coverage of response
   parsing, token issue/parse/expiry and distance maths.
@@ -190,6 +213,12 @@ What the suite covers:
 - **Collectors are vetted.** A collector can only act after an administrator verifies the
   application; verification is what grants the `COLLECTOR` role.
 - **Images are validated by content, not filename** — magic-byte sniffing plus size and type checks.
+- **Credential failures are `401`; permission failures are `403`.** A wrong password or an expired
+  session is an authentication failure, so a client can tell "sign in again" apart from "you are not
+  allowed to do this".
+- **Paged responses have a stable shape.** Every paged endpoint returns an explicit
+  `PageResponse` envelope rather than serializing Spring Data's internal `PageImpl`, so the JSON
+  contract cannot drift with a framework upgrade.
 
 ## Status
 
@@ -198,7 +227,9 @@ waste scanning with AI-assisted classification and manual fallback, collection-p
 distance search, the full pickup lifecycle (`REQUESTED → ACCEPTED → SCHEDULED → PICKED_UP →
 PROCESSING → RECOVERED`/`RECYCLED`, plus cancellation before acceptance and release by a collector),
 a filtered collector workspace, collector application/verification, notifications, recycling
-history, impact reporting, and an admin console (directory, catalog, pickups, analytics).
+history, impact reporting, and an admin console (directory, catalog, pickups, analytics). The public
+auth endpoints are protected by a per-IP rate limit, every paged response uses a stable envelope,
+and the whole stack runs with `docker compose up`.
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the enforced state machine and authorization
 model, [docs/SECURITY.md](./docs/SECURITY.md) for what is verified and what is not, and

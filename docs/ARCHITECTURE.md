@@ -33,6 +33,12 @@ Google directly.
 Repository (JPA) → PostgreSQL`, with `GlobalExceptionHandler` translating domain exceptions into the
 JSON error envelope documented in [API.md](./API.md).
 
+Two cross-cutting filters sit in front of that path. `JwtAuthFilter` establishes the authenticated
+principal, and `AuthRateLimitFilter` (wired by `RateLimitConfig` at the earliest order, on the
+unauthenticated auth endpoints only) rejects brute-force floods with `429` before any password
+hashing runs. Controllers return an explicit `PageResponse` envelope for paged results instead of
+Spring Data's `PageImpl`, so the pagination JSON is a fixed contract rather than a framework detail.
+
 ## Roles and authorization
 
 Authorization is enforced in two layers, and the second layer is the one that matters.
@@ -133,4 +139,5 @@ History and impact read `collected_waste` only — never a scan, never an estima
 | `AiAnalysisWithStubProviderTest` | The real analysis path against a local stub **at the network boundary only** — valid, low-confidence, malformed, provider-failure and image-validation cases. |
 | `AuthorizationAuditTest` | Concurrency, redaction, cross-object access and mutation between residents and between collectors. |
 | `CollectorPoolFilterTest` | Pool filtering correctness and that filtering never widens what is exposed. |
+| `AuthRateLimitTest` | The auth brute-force guard: `429` past the limit, `Retry-After`, per-IP keying and no effect on other endpoints. |
 | `ImageStorageServiceTest`, `GeminiServiceTest`, `JwtServiceTest`, `GeoUtilsTest` | Unit coverage of content sniffing, response parsing, tokens and distance maths. |

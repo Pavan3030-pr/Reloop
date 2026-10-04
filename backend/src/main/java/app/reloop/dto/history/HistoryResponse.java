@@ -1,12 +1,12 @@
 package app.reloop.dto.history;
 
-import org.springframework.data.domain.Page;
+import app.reloop.dto.common.PageResponse;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 public record HistoryResponse(
-        Page<HistoryEntryDto> entries,
+        PageResponse<HistoryEntryDto> entries,
         BigDecimal totalKg,
         List<CategoryTotalDto> byCategory
 ) {

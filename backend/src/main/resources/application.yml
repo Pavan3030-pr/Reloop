@@ -1,6 +1,13 @@
 spring:
   application:
     name: reloop-backend
+  # ReLoop authenticates with its own JWT filter + BCrypt passwords, so there is no need for Boot's
+  # auto-configured in-memory user. Excluding it removes the random "Using generated security
+  # password" account that would otherwise be created on every boot (and never fall back to
+  # default credentials in production).
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   # Local development convenience: `backend/.env` (git-ignored, see backend/.env.example)
   # supplies JWT_SECRET plus any optional credentials, so `./mvnw spring-boot:run` works from
   # the backend directory without exporting anything in the shell. The file is optional —
@@ -58,6 +65,11 @@ reloop:
   # days are resolved in this zone. Defaults to the operating region of the seeded network.
   timezone: ${RELOOP_TIMEZONE:Asia/Kolkata}
   dev-mode: ${RELOOP_DEV_MODE:false}
+  # Brute-force guard for the unauthenticated auth endpoints (login/register/password reset).
+  # Per-client-IP, in-memory, applied before Spring Security so a flood never reaches BCrypt.
+  rate-limit:
+    enabled: ${RELOOP_RATE_LIMIT_ENABLED:true}
+    auth-requests-per-minute: ${RELOOP_RATE_LIMIT_AUTH_PER_MINUTE:30}
 
 springdoc:
   api-docs:

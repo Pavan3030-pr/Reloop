@@ -1,5 +1,6 @@
 package app.reloop.service;
 
+import app.reloop.dto.common.PageResponse;
 import app.reloop.dto.history.HistoryEntryDto;
 import app.reloop.dto.history.HistoryResponse;
 import app.reloop.entity.CollectedWaste;
@@ -63,7 +64,7 @@ public class HistoryService {
                         scale(t.getKg())))
                 .toList();
 
-        return new HistoryResponse(entries.map(this::toDto), scale(totalKg), byCategory);
+        return new HistoryResponse(PageResponse.of(entries.map(this::toDto)), scale(totalKg), byCategory);
     }
 
     private HistoryEntryDto toDto(CollectedWaste cw) {

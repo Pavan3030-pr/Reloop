@@ -1,12 +1,12 @@
 package app.reloop.controller;
 
+import app.reloop.dto.common.PageResponse;
 import app.reloop.dto.pickup.CreatePickupRequest;
 import app.reloop.dto.pickup.PickupDto;
 import app.reloop.security.SecurityUtils;
 import app.reloop.service.PickupService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,10 +35,10 @@ public class PickupController {
     }
 
     @GetMapping
-    public Page<PickupDto> listMine(@RequestParam(name = "status", required = false) String status,
-                                    @RequestParam(defaultValue = "0") int page,
-                                    @RequestParam(defaultValue = "20") int size) {
-        return pickupService.listMine(SecurityUtils.currentUser(), status, page, size);
+    public PageResponse<PickupDto> listMine(@RequestParam(name = "status", required = false) String status,
+                                            @RequestParam(defaultValue = "0") int page,
+                                            @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(pickupService.listMine(SecurityUtils.currentUser(), status, page, size));
     }
 
     @GetMapping("/{code}")

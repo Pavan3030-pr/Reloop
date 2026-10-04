@@ -4,11 +4,11 @@ import app.reloop.dto.admin.AdminUserDto;
 import app.reloop.dto.admin.RejectPartnerRequest;
 import app.reloop.dto.admin.UpdateUserStatusRequest;
 import app.reloop.dto.collection.CollectionPartnerDto;
+import app.reloop.dto.common.PageResponse;
 import app.reloop.security.SecurityUtils;
 import app.reloop.service.AdminService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,10 +27,10 @@ public class AdminDirectoryController {
     private final AdminService adminService;
 
     @GetMapping("/users")
-    public Page<AdminUserDto> users(@RequestParam(name = "q", required = false) String q,
-                                    @RequestParam(defaultValue = "0") int page,
-                                    @RequestParam(defaultValue = "20") int size) {
-        return adminService.listUsers(q, page, size);
+    public PageResponse<AdminUserDto> users(@RequestParam(name = "q", required = false) String q,
+                                            @RequestParam(defaultValue = "0") int page,
+                                            @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(adminService.listUsers(q, page, size));
     }
 
     @PatchMapping("/users/{id}/status")
@@ -40,10 +40,10 @@ public class AdminDirectoryController {
     }
 
     @GetMapping("/collectors")
-    public Page<CollectionPartnerDto> collectors(@RequestParam(name = "status", required = false) String status,
-                                                 @RequestParam(defaultValue = "0") int page,
-                                                 @RequestParam(defaultValue = "20") int size) {
-        return adminService.listPartners(status, page, size);
+    public PageResponse<CollectionPartnerDto> collectors(@RequestParam(name = "status", required = false) String status,
+                                                         @RequestParam(defaultValue = "0") int page,
+                                                         @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(adminService.listPartners(status, page, size));
     }
 
     @PatchMapping("/collectors/{id}/verify")

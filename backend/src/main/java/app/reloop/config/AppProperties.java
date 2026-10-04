@@ -11,6 +11,7 @@ public record AppProperties(
         Gemini gemini,
         Storage storage,
         Admin admin,
+        RateLimit rateLimit,
         boolean devMode
 ) {
 
@@ -40,4 +41,18 @@ public record AppProperties(
     ) {}
 
     public record Admin(String email, String password) {}
+
+    /**
+     * Brute-force guard for the unauthenticated auth endpoints. Limits are per client IP and held
+     * in memory (see {@link app.reloop.security.AuthRateLimitFilter}), so a multi-instance deployment
+     * would need a shared store for a hard guarantee.
+     */
+    public record RateLimit(
+            boolean enabled,
+            Integer authRequestsPerMinute
+    ) {
+        public int perMinuteOrDefault() {
+            return authRequestsPerMinute == null || authRequestsPerMinute <= 0 ? 30 : authRequestsPerMinute;
+        }
+    }
 }

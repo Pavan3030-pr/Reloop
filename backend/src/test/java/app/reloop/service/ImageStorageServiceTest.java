@@ -59,6 +59,7 @@ class ImageStorageServiceTest {
                 null,
                 new AppProperties.Storage("local", uploadDir.toString(), "/uploads"),
                 null,
+                null,
                 false);
         service = new ImageStorageService(properties);
     }

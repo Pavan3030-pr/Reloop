@@ -1,5 +1,6 @@
 package app.reloop.controller;
 
+import app.reloop.dto.common.PageResponse;
 import app.reloop.dto.pickup.CollectPickupRequest;
 import app.reloop.dto.pickup.CollectorDashboardDto;
 import app.reloop.dto.pickup.OpenPoolFiltersDto;
@@ -12,7 +13,6 @@ import app.reloop.service.CollectorService;
 import app.reloop.service.PickupService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,10 +38,10 @@ public class CollectorPickupController {
      * appropriate here because the collector has committed to the job.
      */
     @GetMapping(value = "/pickups", params = "scope=mine")
-    public Page<PickupDto> myPickups(@RequestParam(defaultValue = "0") int page,
-                                     @RequestParam(defaultValue = "20") int size) {
+    public PageResponse<PickupDto> myPickups(@RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "20") int size) {
         var partner = collectorService.verifiedPartnerOf(SecurityUtils.currentUser());
-        return pickupService.assignedTo(partner, page, size);
+        return PageResponse.of(pickupService.assignedTo(partner, page, size));
     }
 
     /**
@@ -50,7 +50,7 @@ public class CollectorPickupController {
      * anyone lives; {@code city}, {@code material} and {@code maxDistanceKm} narrow the list.
      */
     @GetMapping("/pickups")
-    public Page<PickupSummaryDto> availablePickups(
+    public PageResponse<PickupSummaryDto> availablePickups(
             @RequestParam(name = "lat", required = false) java.math.BigDecimal lat,
             @RequestParam(name = "lng", required = false) java.math.BigDecimal lng,
             @RequestParam(name = "city", required = false) String city,
@@ -58,7 +58,7 @@ public class CollectorPickupController {
             @RequestParam(name = "maxDistanceKm", required = false) java.math.BigDecimal maxDistanceKm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return pickupService.availableSummaries(lat, lng, city, material, maxDistanceKm, page, size);
+        return PageResponse.of(pickupService.availableSummaries(lat, lng, city, material, maxDistanceKm, page, size));
     }
 
     /**

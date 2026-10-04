@@ -223,9 +223,11 @@ class FullFlowIntegrationTest {
         assertThat(me.path("__status").asInt()).isEqualTo(200);
         assertThat(me.path("email").asText()).isEqualTo(userEmail);
 
+        // A wrong password is an authentication failure, so it must be 401 (not 403): a client can
+        // then tell "your credentials are wrong" apart from "you are not allowed to do this".
         JsonNode badLogin = post("/api/auth/login", null,
                 Map.of("email", userEmail, "password", "Wrong#Passw0rd"));
-        assertThat(badLogin.path("__status").asInt()).isEqualTo(403);
+        assertThat(badLogin.path("__status").asInt()).isEqualTo(401);
 
         JsonNode refreshed = post("/api/auth/refresh", null,
                 Map.of("refreshToken", login.path("refreshToken").asText()));
@@ -698,9 +700,10 @@ class FullFlowIntegrationTest {
                 Map.of("token", resetToken, "newPassword", "New#Passw0rd9"));
         assertThat(reset.path("__status").asInt()).isEqualTo(204);
 
+        // The retired password no longer authenticates: 401, not 403.
         JsonNode oldPassword = post("/api/auth/login", null,
                 Map.of("email", userEmail, "password", userPassword));
-        assertThat(oldPassword.path("__status").asInt()).isEqualTo(403);
+        assertThat(oldPassword.path("__status").asInt()).isEqualTo(401);
 
         JsonNode newPassword = post("/api/auth/login", null,
                 Map.of("email", userEmail, "password", "New#Passw0rd9"));

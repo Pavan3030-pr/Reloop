@@ -15,6 +15,18 @@ current build, not a compliance claim.
 - `RELOOP_DEV_MODE=true` returns the password-reset token in the API response, because this build
   ships no mail transport. It is **off by default** and must never be enabled outside local
   development.
+- A wrong password or an unknown account is an **authentication** failure (`401`), not an
+  authorization one, so a client never confuses "sign in again" with "you are not allowed".
+
+## Brute-force protection
+
+`AuthRateLimitFilter` (registered by `RateLimitConfig` at the earliest filter order, on
+`/api/auth/login`, `/api/auth/register` and both password-reset paths) applies a sliding-window limit
+per client IP — default **30 attempts per minute** — and answers `429 Too Many Requests` with the
+standard error envelope and a `Retry-After` header. Because it runs ahead of Spring Security, a flood
+is rejected before any BCrypt comparison or database lookup. Limits are configurable via
+`RELOOP_RATE_LIMIT_ENABLED` and `RELOOP_RATE_LIMIT_AUTH_PER_MINUTE`, and verified by
+`AuthRateLimitTest`.
 
 ## Authorization
 
@@ -85,12 +97,16 @@ and a text file named `.png`) and by the end-to-end upload step in `FullFlowInte
 
 `GlobalExceptionHandler` maps domain exceptions to a consistent JSON envelope
 (`status`, `error`, `message`, optional `fieldErrors`) with meaningful status codes — `400`
-malformed, `401` unauthenticated, `403` not yours, `404` absent, `409` illegal transition or lost
-race, `503` provider unavailable. Stack traces and SQL errors are never returned to clients.
+malformed, `401` unauthenticated (including a wrong password), `403` authenticated but not
+permitted (including a disabled account), `404` absent, `409` illegal transition or lost race, `429`
+rate-limited, `503` provider unavailable. Stack traces and SQL errors are never returned to clients.
 
 ## Out of scope / not claimed
 
-- No rate limiting on authentication endpoints in this build.
+- The auth rate-limit counters live in a single JVM's memory. That is correct for the single
+  instance this build runs as, but a multi-replica deployment needs a shared store (Redis, an
+  edge/gateway rule) for a hard guarantee. The limiter also trusts `X-Forwarded-For` because ReLoop
+  is expected to sit behind a reverse proxy; a directly exposed server should not trust that header.
 - No email verification flow (the flag exists; no transport is configured).
 - No antivirus/AV scanning of uploads beyond format, size and content checks.
 - No penetration test has been performed; the controls above are verified by the test suite listed

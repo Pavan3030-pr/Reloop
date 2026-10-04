@@ -18,7 +18,7 @@ class JwtServiceTest {
 
     private JwtService serviceWith(int ttlMinutes) {
         JwtService service = new JwtService(new AppProperties(
-                new AppProperties.Jwt(SECRET, ttlMinutes, 30), null, null, null, null, false));
+                new AppProperties.Jwt(SECRET, ttlMinutes, 30), null, null, null, null, null, false));
         service.init();
         return service;
     }
@@ -66,14 +66,14 @@ class JwtServiceTest {
     @Test
     void shortSecretIsRejectedAtStartup() {
         JwtService service = new JwtService(new AppProperties(
-                new AppProperties.Jwt("too-short", 15, 30), null, null, null, null, false));
+                new AppProperties.Jwt("too-short", 15, 30), null, null, null, null, null, false));
         assertThrows(IllegalStateException.class, service::init);
     }
 
     @Test
     void missingSecretIsRejectedAtStartup() {
         JwtService service = new JwtService(new AppProperties(
-                new AppProperties.Jwt(" ", 15, 30), null, null, null, null, false));
+                new AppProperties.Jwt(" ", 15, 30), null, null, null, null, null, false));
         assertThrows(IllegalStateException.class, service::init);
     }
 }

@@ -1,5 +1,6 @@
 package app.reloop.controller;
 
+import app.reloop.dto.common.PageResponse;
 import app.reloop.dto.scan.SaveScanRequest;
 import app.reloop.dto.scan.ScanDto;
 import app.reloop.dto.scan.WasteAnalysisResponse;
@@ -7,7 +8,6 @@ import app.reloop.security.SecurityUtils;
 import app.reloop.service.WasteScanService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,9 +47,9 @@ public class WasteScanController {
     }
 
     @GetMapping("/scans")
-    public Page<ScanDto> listScans(@RequestParam(defaultValue = "0") int page,
-                                   @RequestParam(defaultValue = "20") int size) {
-        return wasteScanService.listMine(SecurityUtils.currentUser(), page, size);
+    public PageResponse<ScanDto> listScans(@RequestParam(defaultValue = "0") int page,
+                                           @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(wasteScanService.listMine(SecurityUtils.currentUser(), page, size));
     }
 
     @GetMapping("/scans/{id}")

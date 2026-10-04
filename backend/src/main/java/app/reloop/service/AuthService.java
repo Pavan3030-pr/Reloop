@@ -17,6 +17,7 @@ import app.reloop.exception.BadRequestException;
 import app.reloop.exception.ConflictException;
 import app.reloop.exception.ForbiddenException;
 import app.reloop.exception.NotFoundException;
+import app.reloop.exception.UnauthorizedException;
 import app.reloop.repository.PasswordResetTokenRepository;
 import app.reloop.repository.UserProfileRepository;
 import app.reloop.repository.UserRepository;
@@ -86,11 +87,13 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         String email = request.email().trim().toLowerCase();
+        // A bad credential is an authentication failure, not an authorization one: it must be 401,
+        // not 403. (A disabled *valid* account is a different case and stays 403 below.)
         User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ForbiddenException("Invalid email or password"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
 
         if (!passwordService.matches(request.password(), user.getPasswordHash())) {
-            throw new ForbiddenException("Invalid email or password");
+            throw new UnauthorizedException("Invalid email or password");
         }
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new ForbiddenException("This account is disabled. Contact support for help.");

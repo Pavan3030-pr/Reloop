@@ -1,10 +1,10 @@
 package app.reloop.controller;
 
+import app.reloop.dto.common.PageResponse;
 import app.reloop.dto.notification.NotificationDto;
 import app.reloop.security.SecurityUtils;
 import app.reloop.service.NotificationService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,11 +24,11 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @GetMapping
-    public Page<NotificationDto> list(@RequestParam(defaultValue = "0") int page,
-                                      @RequestParam(defaultValue = "20") int size) {
-        return notificationService.list(SecurityUtils.currentUser(), page, size)
+    public PageResponse<NotificationDto> list(@RequestParam(defaultValue = "0") int page,
+                                              @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(notificationService.list(SecurityUtils.currentUser(), page, size)
                 .map(h -> new NotificationDto(h.id(), h.type(), h.title(), h.message(),
-                        h.referenceId(), h.read(), h.createdAt()));
+                        h.referenceId(), h.read(), h.createdAt())));
     }
 
     @GetMapping("/unread-count")

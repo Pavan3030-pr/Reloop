@@ -15,6 +15,10 @@ Unauthenticated access is permitted only for: `/api/auth/register`, `/api/auth/l
 `GET /api/waste/categories`, `/uploads/**`, `/actuator/health`, `/actuator/info`, and the
 swagger endpoints.
 
+The unauthenticated auth endpoints are rate limited **per client IP** (default 30 requests/minute).
+Past the limit they answer `429 Too Many Requests` with a `Retry-After` header. Configure with
+`RELOOP_RATE_LIMIT_ENABLED` / `RELOOP_RATE_LIMIT_AUTH_PER_MINUTE`.
+
 Roles: `USER`, `COLLECTOR`, `ADMIN`. `/api/admin/**` requires `ADMIN`, `/api/collector/**` requires
 `COLLECTOR`, everything else requires an authenticated user.
 
@@ -28,15 +32,29 @@ All errors share one shape:
   "timestamp": "2026-09-20T06:12:44.512Z" }
 ```
 
-`401` unauthenticated, `403` authenticated but not permitted, `409` state conflicts
-(e.g. cancelling an accepted pickup), `503` when the AI provider is unavailable or unconfigured.
+`401` unauthenticated — including a wrong password or an unknown account on login, `403`
+authenticated but not permitted (including a valid but disabled account), `409` state conflicts
+(e.g. cancelling an accepted pickup), `429` rate limited, `503` when the AI provider is unavailable or
+unconfigured.
+
+### Paged responses
+
+Every endpoint that returns a page uses one stable envelope (never Spring Data's internal
+`PageImpl`), so the shape is the same across the API and cannot drift with a framework upgrade:
+
+```json
+{ "content": [ /* … */ ], "number": 0, "size": 20, "totalElements": 42,
+  "totalPages": 3, "first": true, "last": false }
+```
+
+The recycling-history response nests this same object under `entries`.
 
 ## Auth
 
 | Method | Path | Notes |
 | --- | --- | --- |
 | POST | `/api/auth/register` | `{email, password, fullName, phone?}` → `201` + tokens. Creates the profile and a welcome notification. |
-| POST | `/api/auth/login` | `{email, password}` → tokens. Records `lastLoginAt`. |
+| POST | `/api/auth/login` | `{email, password}` → tokens. Records `lastLoginAt`. Wrong credentials are `401`; a valid but disabled account is `403`; too many attempts from one IP is `429`. |
 | POST | `/api/auth/refresh` | `{refreshToken}` → rotated tokens. |
 | POST | `/api/auth/logout` | `{refreshToken}` → `204`. |
 | POST | `/api/auth/forgot-password` | `{email}` → generic message; **in dev mode** also returns `devResetToken` (no email infrastructure exists in this build). |
