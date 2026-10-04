@@ -1,10 +1,10 @@
 # ReLoop — one-command local/full stack.
 #
-#   JWT_SECRET="$(openssl rand -base64 48)" docker compose up --build
+#   cp .env.example .env   # then set DB_PASSWORD and JWT_SECRET
+#   docker compose up --build
 #
-# Then open http://localhost:5173. Set ADMIN_EMAIL / ADMIN_PASSWORD on the first run to bootstrap an
-# administrator, and GEMINI_API_KEY to switch on the AI scanner. Every value below is overridable
-# from the shell or a root .env file (see README).
+# The client is served at http://localhost:8081; nginx proxies /api and /uploads to the backend,
+# and the API is also published on :8080 for Swagger (/swagger-ui.html) and direct calls.
 name: reloop
 
 services:
@@ -13,7 +13,7 @@ services:
     environment:
       POSTGRES_DB: reloop
       POSTGRES_USER: reloop
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-reloop}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - reloop-db:/var/lib/postgresql/data
     healthcheck:
@@ -31,16 +31,18 @@ services:
     environment:
       DB_URL: jdbc:postgresql://db:5432/reloop
       DB_USERNAME: reloop
-      DB_PASSWORD: ${DB_PASSWORD:-reloop}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       # Required: compose refuses to start without it rather than signing tokens with a default.
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET, e.g. JWT_SECRET="$(openssl rand -base64 48)"}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env, e.g. openssl rand -base64 48}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
       RELOOP_TIMEZONE: ${RELOOP_TIMEZONE:-Asia/Kolkata}
-      # Uploaded images are served through the frontend's /uploads proxy, matching local dev.
+      # Uploaded images are written here and served through the frontend's /uploads proxy.
       STORAGE_LOCAL_DIR: /var/reloop/uploads
       STORAGE_PUBLIC_BASE_URL: /uploads
+      # Trust the proxy's X-Forwarded-* headers (rate limiting and client address resolution).
+      SERVER_FORWARD_HEADERS_STRATEGY: native
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     volumes:
@@ -54,7 +56,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "5173:80"
+      - "8081:80"
     restart: unless-stopped
 
 volumes:

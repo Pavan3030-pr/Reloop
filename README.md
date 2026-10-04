@@ -41,6 +41,21 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 - **AI:** Google Gemini (`generateContent`) for waste classification, called **only** from the
   backend. The API key never reaches the browser.
 
+## Run with Docker
+
+No JDK, Node or PostgreSQL needed — one command builds and runs the database, the API and the
+client (nginx serves the built bundle and proxies `/api` and `/uploads` to the backend):
+
+```bash
+cp .env.example .env   # set DB_PASSWORD and JWT_SECRET (openssl rand -base64 48)
+docker compose up --build
+```
+
+Open <http://localhost:8081>. Add `GEMINI_API_KEY` to `.env` to switch on the AI scanner, and
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` to bootstrap an administrator on the first run. Compose refuses to
+start without `DB_PASSWORD` and `JWT_SECRET` rather than fall back to a default. The backend image is
+multi-stage and runs as a non-root user; every container ships a healthcheck.
+
 ## Quick start
 
 Prerequisites: **JDK 21+**, **Node 20+**, **PostgreSQL 14+** (or just **Docker** — see below).
@@ -62,22 +77,6 @@ cd backend && ./mvnw spring-boot:run
 
 Open <http://localhost:5173>. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` (see below) before the first
 backend start to bootstrap an administrator.
-
-### Run the whole stack with Docker
-
-No JDK, Node or PostgreSQL needed — one command builds and runs the database, the API and the
-client (nginx serves the built bundle and proxies `/api` and `/uploads` to the backend):
-
-```bash
-JWT_SECRET="$(openssl rand -base64 48)" \
-  ADMIN_EMAIL=admin@reloop.local ADMIN_PASSWORD='change-me-now' \
-  docker compose up --build
-```
-
-Open <http://localhost:5173>. Add `GEMINI_API_KEY=...` to the same command to switch on the AI
-scanner. `JWT_SECRET` is required — Compose refuses to start without it rather than sign tokens with
-a default. Everything else (database password, CORS origins, timezone) can be set from the shell or
-a root `.env` file.
 
 ### Health check
 

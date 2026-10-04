@@ -54,6 +54,14 @@ const COLLECTOR_POINTS = [
   'Build a verified collection history you can point to',
 ];
 
+
+const CLIMATE_TRACKS: { icon: IconName; title: string; body: string }[] = [
+  { icon: 'recycle', title: 'Waste Management', body: 'AI-guided sorting and verified pickups keep recyclables out of landfill.' },
+  { icon: 'sprout', title: 'Circular Economy', body: 'Weighed material is traced through processing to recovery as feedstock.' },
+  { icon: 'pin', title: 'Sustainable Cities', body: 'A live map of verified collection points and collectors in your city.' },
+  { icon: 'sparkles', title: 'Climate Tech', body: 'Every recovered kilogram is converted to kg CO\u2082e with a published method.' },
+];
+
 export function Landing() {
   const root = useRevealOnScroll([]);
 
@@ -437,6 +445,30 @@ export function Landing() {
                   </span>
                   <div className="jn-label">{node.label}</div>
                   <div className="jn-sub">{node.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------- climate edition */}
+        <section className="section rule" id="climate-edition">
+          <div className="container">
+            <div style={{ maxWidth: '62ch' }} data-reveal>
+              <span className="eyebrow">SANKALP · The Climate Edition</span>
+              <h2 className="h2">Built for a climate-resilient tomorrow.</h2>
+              <p className="lead">
+                ReLoop addresses four of the Climate Edition challenge areas with one measurable loop.
+              </p>
+            </div>
+            <div className="steps" data-reveal>
+              {CLIMATE_TRACKS.map((track) => (
+                <div className="step" key={track.title}>
+                  <span className="icon-tile" aria-hidden="true">
+                    <Icon name={track.icon} size={18} />
+                  </span>
+                  <h3 className="h3">{track.title}</h3>
+                  <p>{track.body}</p>
                 </div>
               ))}
             </div>
