@@ -39,6 +39,15 @@ resident ──▶ scan / AI classification ──▶ collection point or pickup
 - **AI:** Google Gemini (`generateContent`) for waste classification, called **only** from the
   backend. The API key never reaches the browser.
 
+## Run with Docker
+
+```bash
+cp .env.example .env   # set DB_PASSWORD and JWT_SECRET
+docker compose up --build
+```
+
+The app is served at http://localhost:8081 (nginx serves the frontend and proxies `/api` and `/uploads`).
+
 ## Quick start
 
 Prerequisites: **JDK 21+**, **Node 20+**, **PostgreSQL 14+**.

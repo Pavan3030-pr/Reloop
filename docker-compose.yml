@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: reloop
+      POSTGRES_USER: reloop
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reloop"]
+      interval: 5s
+      retries: 10
+  backend:
+    build: ./backend
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/reloop
+      DB_USERNAME: reloop
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@reloop.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}
+      STORAGE_PUBLIC_BASE_URL: ${PUBLIC_URL:-http://localhost:8081}/uploads
+      STORAGE_LOCAL_DIR: /app/data/uploads
+    volumes: [uploads:/app/data/uploads]
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["8081:80"]
+volumes:
+  pgdata:
+  uploads:
