@@ -70,4 +70,22 @@ cd frontend && npm run build   # typecheck + production build
 - [Security model](docs/SECURITY.md)
 - [Impact methodology](docs/IMPACT.md)
 - [Three-minute demo script](docs/DEMO.md)
-- [Pitch deck — Team TechGaint](docs/submission/ReLoop-Pitch-Deck-TechGaint.pptx)
+
+## Pitch deck — Team TechGaint
+
+Twelve slides, light theme. [PDF](docs/submission/preview/ReLoop-Pitch-Deck-TechGaint.pdf) ·
+[PowerPoint source](docs/submission/ReLoop-Pitch-Deck-TechGaint.pptx).
+Regenerate with `python scripts/build-pitch-deck.py && python scripts/render-pitch-deck-pngs.py`.
+
+![1. Title](docs/submission/preview/slide-01.png)
+![2. The problem](docs/submission/preview/slide-02.png)
+![3. The idea](docs/submission/preview/slide-03.png)
+![4. The product](docs/submission/preview/slide-04.png)
+![5. The core idea](docs/submission/preview/slide-05.png)
+![6. Trust and safety](docs/submission/preview/slide-06.png)
+![7. Architecture](docs/submission/preview/slide-07.png)
+![8. Impact](docs/submission/preview/slide-08.png)
+![9. Scale](docs/submission/preview/slide-09.png)
+![10. What exists today](docs/submission/preview/slide-10.png)
+![11. The ask](docs/submission/preview/slide-11.png)
+![12. Close](docs/submission/preview/slide-12.png)
